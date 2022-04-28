@@ -33,6 +33,8 @@ import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.countryrules.CountryRule;
 import com.graphhopper.routing.util.countryrules.CountryRuleFactory;
 import com.graphhopper.routing.util.parsers.TurnCostParser;
+import com.graphhopper.storage.DataAccess;
+import com.graphhopper.storage.Directory;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.storage.NodeAccess;
@@ -77,6 +79,11 @@ public class OSMReader {
     private final IntsRef tempRelFlags;
     private Date osmDataDate;
     private long zeroCounter = 0;
+    
+    // at.prismasolutions allow retrieval of osm ids
+    final BitUtil bitUtil = BitUtil.LITTLE;
+	private DataAccess edgeMapping;
+    // at.prismasolutions allow retrieval of osm ids
 
     private GHLongLongHashMap osmWayIdToRelationFlagsMap = new GHLongLongHashMap(200, .5f);
     // stores osm way ids used by relations to identify which edge ids needs to be mapped later
@@ -96,6 +103,11 @@ public class OSMReader {
         tempRelFlags = encodingManager.createRelationFlags();
         if (tempRelFlags.length != 2)
             throw new IllegalArgumentException("Cannot use relation flags with != 2 integers");
+        
+        // at.prismasolutions allow retrieval of osm ids
+        Directory dir = ghStorage.getDirectory();
+		edgeMapping = dir.findOrCreate("edge_mapping");
+        // at.prismasolutions allow retrieval of osm ids
     }
 
     /**
@@ -334,11 +346,19 @@ public class OSMReader {
             iter.setWayGeometry(pointList.shallowCopy(1, pointList.size() - 1, false));
         }
         encodingManager.applyWayTags(way, iter);
+        
+		// at.prismasolutions allow retrieval of osm ids
+		long pointer = 8L * iter.getEdge();
+		edgeMapping.ensureCapacity(pointer + 8L);
 
+		edgeMapping.setInt(pointer, bitUtil.getIntLow(way.getId()));
+		edgeMapping.setInt(pointer + 4, bitUtil.getIntHigh(way.getId()));
+		// at.prismasolutions allow retrieval of osm ids
+		
         checkDistance(iter);
-        if (osmWayIdSet.contains(way.getId())) {
-            getEdgeIdToOsmWayIdMap().put(iter.getEdge(), way.getId());
-        }
+		if (osmWayIdSet.contains(way.getId())) {
+			getEdgeIdToOsmWayIdMap().put(iter.getEdge(), way.getId());
+		}
     }
 
     private void checkCoordinates(int nodeIndex, GHPoint point) {
@@ -491,6 +511,9 @@ public class OSMReader {
         osmWayIdToRelationFlagsMap = null;
         osmWayIdSet = null;
         edgeIdToOsmWayIdMap = null;
+     // at.prismasolutions allow retrieval of osm ids
+        this.edgeMapping.flush();
+     // at.prismasolutions allow retrieval of osm ids
     }
 
     IntsRef getRelFlagsMap(long osmId) {

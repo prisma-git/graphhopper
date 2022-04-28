@@ -69,4 +69,6 @@ public interface Directory {
     void close();
 
     Directory create();
+
+	DataAccess findOrCreate(String name);
 }

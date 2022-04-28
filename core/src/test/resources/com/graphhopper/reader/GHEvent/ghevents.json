@@ -1,0 +1,36 @@
+{
+  "ghEvents": [
+    {
+      "type": 0,
+      "startDate": "2022-02-02T14:25:34+02:00",
+      "endDate": "2022-02-14T14:25:34+02:00",
+      "direction": 2,
+      "statFrom": 0,
+      "statTo": 1,
+      "caption": "Baustelle die nicht blockiert aber vermieden werden soll mit Malus (factor > 1)",
+      "extType": "foo",
+      "extId": "bar",
+      "extEdgeId": "10",
+      "shape": "LINESTRING(9.4317166 51.2492152,9 52,9.4 51.2)",
+      "parameterName": null,
+      "parameterValue": null,
+      "factor": 1.5
+    },
+    {
+      "type": 4,
+      "startDate": null,
+      "endDate": null,
+      "direction": 2,
+      "statFrom": 0,
+      "statTo": 1,
+      "caption": "Brücke mit maximal Gewicht 3.5t",
+      "extType": "foo",
+      "extId": "bar2",
+      "extEdgeId": "11",
+      "shape": "LINESTRING(9 52,9.43 51.25,10 49)",
+      "parameterName": "weight",
+      "parameterValue": 3.5,
+      "factor": -1
+    }
+  ]
+}

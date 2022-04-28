@@ -17,9 +17,13 @@
  */
 package com.graphhopper.routing.weighting;
 
+import com.graphhopper.GHRequest;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.PMap;
+
+import at.prismasolutions.graphhopper.extension.GHEventMapper;
 
 /**
  * Specifies how the best route is calculated. E.g. the fastest or shortest route.
@@ -79,5 +83,13 @@ public interface Weighting {
         }
         return calcEdgeWeight(edgeState, reverse);
     }
+    
+   
+    
+    //Extension	
+    void setHints(PMap hints);
+    void setGHEventMapper(GHEventMapper mapper);
+
+
 
 }

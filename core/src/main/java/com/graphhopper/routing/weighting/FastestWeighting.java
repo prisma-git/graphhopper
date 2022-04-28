@@ -99,8 +99,11 @@ public class FastestWeighting extends AbstractWeighting {
         boolean unfavoredEdge = edgeState.get(EdgeIteratorState.UNFAVORED_EDGE);
         if (unfavoredEdge)
             time += headingPenalty;
-
-        return time;
+        double factor = this.getFactor(edgeState, reverse);
+        if(factor <0) {
+        	return Double.POSITIVE_INFINITY;
+        }
+        return time*factor;
     }
 
     @Override

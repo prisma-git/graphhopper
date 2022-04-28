@@ -19,6 +19,7 @@ package com.graphhopper.routing;
 
 import com.carrotsearch.hppc.IntArrayList;
 import com.carrotsearch.hppc.IntIndexedContainer;
+import com.graphhopper.GHRequest;
 import com.graphhopper.routing.ch.CHRoutingAlgorithmFactory;
 import com.graphhopper.routing.ch.PrepareContractionHierarchies;
 import com.graphhopper.routing.ev.BooleanEncodedValue;
@@ -40,6 +41,9 @@ import com.graphhopper.storage.index.Snap;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.BBox;
 import com.graphhopper.util.shapes.GHPoint;
+
+import at.prismasolutions.graphhopper.extension.GHEventMapper;
+
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -978,6 +982,18 @@ public class RoutingAlgorithmTest {
             public String toString() {
                 return tmpW.getFlagEncoder().toString() + "_" + getName();
             }
+            
+			@Override
+			public void setGHEventMapper(GHEventMapper mapper) {
+				// TODO Auto-generated method stub
+				
+			}
+
+			@Override
+			public void setHints(PMap hints) {
+				// TODO Auto-generated method stub
+				
+			}
         };
 
         GraphHopperStorage graph = f.createGHStorage(true);

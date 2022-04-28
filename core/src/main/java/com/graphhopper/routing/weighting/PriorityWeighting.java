@@ -57,6 +57,10 @@ public class PriorityWeighting extends FastestWeighting {
         double priority = edgeState.get(priorityEnc);
         if (priority > maxPrio)
             throw new IllegalArgumentException("priority cannot be bigger than " + maxPrio + " but was " + priority);
-        return weight / priority;
+        double factor = this.getFactor(edgeState, reverse);
+        if(factor <0) {
+        	return Double.POSITIVE_INFINITY;
+        }
+        return (weight / priority)*factor;
     }
 }

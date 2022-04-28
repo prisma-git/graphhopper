@@ -28,6 +28,9 @@ import com.graphhopper.jackson.Jackson;
 import com.graphhopper.routing.weighting.custom.CustomProfile;
 import com.graphhopper.routing.weighting.custom.CustomWeighting;
 import com.graphhopper.util.CustomModel;
+
+import at.prismasolutions.graphhopper.extension.GHEventManager;
+import at.prismasolutions.graphhopper.extension.GraphHopperWithId;
 import io.dropwizard.lifecycle.Managed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,7 +49,7 @@ public class GraphHopperManaged implements Managed {
         if (configuration.has("gtfs.file")) {
             graphHopper = new GraphHopperGtfs(configuration);
         } else {
-            graphHopper = new GraphHopper();
+            graphHopper = new GraphHopperWithId();
         }
 
         String customModelFolder = configuration.getString("custom_model_folder", "");
@@ -54,6 +57,7 @@ public class GraphHopperManaged implements Managed {
         configuration.setProfiles(newProfiles);
 
         graphHopper.init(configuration);
+       
     }
 
     public static List<Profile> resolveCustomModelFiles(String customModelFolder, List<Profile> profiles) {
@@ -101,6 +105,10 @@ public class GraphHopperManaged implements Managed {
     @Override
     public void start() {
         graphHopper.importOrLoad();
+        if(graphHopper instanceof GraphHopperWithId ) {
+        	GHEventManager manager = new GHEventManager((GraphHopperWithId) graphHopper);
+        	((GraphHopperWithId) graphHopper).setManager(manager);
+        }
         logger.info("loaded graph at:{}, data_reader_file:{}, encoded values:{}, {} ints for edge flags, {}",
                 graphHopper.getGraphHopperLocation(), graphHopper.getOSMFile(),
                 graphHopper.getEncodingManager().toEncodedValuesAsString(),

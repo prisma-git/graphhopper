@@ -24,12 +24,14 @@ import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.EdgeIteratorState;
 
+import at.prismasolutions.graphhopper.extension.ExtendedWeighting;
+
 /**
  * Whenever a {@link QueryGraph} is used for shortest path calculations including turn costs we need to wrap the
  * {@link Weighting} we want to use with this class. Otherwise turn costs at virtual nodes and/or including virtual
  * edges will not be calculated correctly.
  */
-public class QueryGraphWeighting implements Weighting {
+public class QueryGraphWeighting extends ExtendedWeighting {
     private final Weighting weighting;
     private final int firstVirtualNodeId;
     private final int firstVirtualEdgeId;

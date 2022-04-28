@@ -30,6 +30,8 @@ import com.graphhopper.util.CustomModel;
 import com.graphhopper.util.PMap;
 import com.graphhopper.util.Parameters;
 
+import at.prismasolutions.graphhopper.extension.GHEventManager;
+
 import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
 import static com.graphhopper.routing.weighting.Weighting.INFINITE_U_TURN_COSTS;
 import static com.graphhopper.util.Helper.toLowerCase;
@@ -37,6 +39,9 @@ import static com.graphhopper.util.Helper.toLowerCase;
 public class DefaultWeightingFactory implements WeightingFactory {
     private final GraphHopperStorage ghStorage;
     private final EncodingManager encodingManager;
+  //Extension
+    private GHEventManager manager;
+  //Extension
 
     public DefaultWeightingFactory(GraphHopperStorage ghStorage, EncodingManager encodingManager) {
         this.ghStorage = ghStorage;
@@ -97,7 +102,21 @@ public class DefaultWeightingFactory implements WeightingFactory {
 
         if (weighting == null)
             throw new IllegalArgumentException("Weighting '" + weightingStr + "' not supported");
-
+      //Extension
+        weighting.setHints(hints);
+        if(this.manager != null) {
+        	weighting.setGHEventMapper(manager.getMapper());
+        }
+      //Extension
         return weighting;
     }
+  //Extension
+	public GHEventManager getManager() {
+		return manager;
+	}
+
+	public void setManager(GHEventManager manager) {
+		this.manager = manager;
+	}
+	//Extension
 }

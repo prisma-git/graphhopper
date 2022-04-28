@@ -65,7 +65,11 @@ public class ShortFastestWeighting extends FastestWeighting {
     @Override
     public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
         double time = super.calcEdgeWeight(edgeState, reverse);
-        return time * timeFactor + edgeState.getDistance() * distanceFactor;
+        double factor = this.getFactor(edgeState, reverse);
+        if(factor <0) {
+        	return Double.POSITIVE_INFINITY;
+        }
+        return (time * timeFactor + edgeState.getDistance() * distanceFactor)*factor;
     }
 
     @Override

@@ -20,12 +20,14 @@ package com.graphhopper.routing.weighting;
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIteratorState;
 
+import at.prismasolutions.graphhopper.extension.ExtendedWeighting;
+
 /**
  * The AdjustedWeighting wraps another Weighting.
  *
  * @author Robin Boldt
  */
-public abstract class AbstractAdjustedWeighting implements Weighting {
+public abstract class AbstractAdjustedWeighting extends ExtendedWeighting {
     protected final Weighting superWeighting;
 
     public AbstractAdjustedWeighting(Weighting superWeighting) {

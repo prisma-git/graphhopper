@@ -64,7 +64,11 @@ public class CurvatureWeighting extends PriorityWeighting {
 
         // We use the log of the speed to decrease the impact of the speed, therefore we don't use the highway
         double regularWeight = roadDistance / Math.log(speed);
-        return (bendiness * regularWeight) / priority;
+        double factor = this.getFactor(edgeState, reverse);
+        if(factor <0) {
+        	return Double.POSITIVE_INFINITY;
+        }
+        return ((bendiness * regularWeight) / priority)*factor;
     }
 
     protected double getRoadSpeed(EdgeIteratorState edge, boolean reverse) {

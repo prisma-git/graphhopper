@@ -216,7 +216,11 @@ public class TrafficChangeWithNodeOrderingReusingTest {
             if (result < 0) {
                 throw new IllegalStateException("negative weights are not allowed: " + result);
             }
-            return result;
+            double factor = this.getFactor(edgeState, reverse);
+            if(factor <0) {
+            	return Double.POSITIVE_INFINITY;
+            }
+            return result*factor;
         }
 
         @Override

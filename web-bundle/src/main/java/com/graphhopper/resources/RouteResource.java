@@ -20,13 +20,19 @@ package com.graphhopper.resources;
 import com.graphhopper.GHRequest;
 import com.graphhopper.GHResponse;
 import com.graphhopper.GraphHopper;
+import com.graphhopper.ResponsePath;
 import com.graphhopper.gpx.GpxConversions;
 import com.graphhopper.http.GHPointParam;
 import com.graphhopper.jackson.MultiException;
 import com.graphhopper.jackson.ResponsePathSerializer;
 import com.graphhopper.routing.ProfileResolver;
 import com.graphhopper.util.*;
+import com.graphhopper.util.Parameters.Details;
+import com.graphhopper.util.details.PathDetail;
 import com.graphhopper.util.shapes.GHPoint;
+
+import at.prismasolutions.graphhopper.extension.GHEvent;
+import at.prismasolutions.graphhopper.extension.GraphHopperWithId;
 import io.dropwizard.jersey.params.AbstractParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +49,8 @@ import java.util.Map;
 import static com.graphhopper.util.Parameters.Details.PATH_DETAILS;
 import static com.graphhopper.util.Parameters.Routing.*;
 import static java.util.stream.Collectors.toList;
+
+import java.util.ArrayList;
 
 /**
  * Resource to use GraphHopper in a remote client application like mobile or browser. Note: If type
@@ -144,6 +152,8 @@ public class RouteResource {
                     + ", time0: " + Math.round(ghResponse.getBest().getTime() / 60000f) + "min"
                     + ", points0: " + ghResponse.getBest().getPoints().size()
                     + ", debugInfo: " + ghResponse.getDebugInfo());
+            this.addExtension(ghResponse);
+            
             return writeGPX ?
                     gpxSuccessResponseBuilder(ghResponse, timeString, trackName, enableElevation, withRoute, withTrack, withWayPoints, Constants.VERSION).
                             header("X-GH-Took", "" + Math.round(took)).
@@ -156,7 +166,35 @@ public class RouteResource {
         }
     }
 
-    @POST
+    private void addExtension(GHResponse ghResponse) {
+    	logger.info("trying to add extension");
+    	if(this.graphHopper instanceof GraphHopperWithId) {
+        	for(ResponsePath path : ghResponse.getAll()) {
+        		if(path.getPathDetails().containsKey(Details.EDGE_ID)){
+        			List<PathDetail> ids = path.getPathDetails().get(Details.EDGE_ID);
+        			List<PathDetail> osmIds = new ArrayList<PathDetail>();
+        			List<PathDetail> ghEvents = new ArrayList<PathDetail>();
+        			GraphHopperWithId idhopper = (GraphHopperWithId) this.graphHopper;
+        			for(PathDetail id : ids) {
+        				long osmId = idhopper.getWay((int)id.getValue());
+        				List<GHEvent> events = idhopper.getManager().getMapper().getGHEvents((int)id.getValue());
+        				PathDetail osmDetail = new PathDetail(osmId);
+        				osmDetail.setFirst(id.getFirst());
+        				osmDetail.setLast(id.getLast());
+        				PathDetail eventDetail = new PathDetail(events);
+        				eventDetail.setFirst(id.getFirst());
+        				eventDetail.setLast(id.getLast());
+        				osmIds.add(osmDetail);
+        				ghEvents.add(eventDetail);
+        			}
+        			path.getPathDetails().put("osmIds", osmIds);
+        			path.getPathDetails().put("events", ghEvents);
+        		}        		
+        	}
+        }		
+	}
+
+	@POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response doPost(@NotNull GHRequest request, @Context HttpServletRequest httpReq) {
@@ -201,12 +239,14 @@ public class RouteResource {
                     + ", time0: " + Math.round(ghResponse.getBest().getTime() / 60000f) + "min"
                     + ", points0: " + ghResponse.getBest().getPoints().size()
                     + ", debugInfo: " + ghResponse.getDebugInfo());
+            this.addExtension(ghResponse);
             return Response.ok(ResponsePathSerializer.jsonObject(ghResponse, instructions, calcPoints, enableElevation, pointsEncoded, took)).
                     header("X-GH-Took", "" + Math.round(took)).
                     type(MediaType.APPLICATION_JSON).
                     build();
         }
     }
+    
 
     private void enableEdgeBasedIfThereAreCurbsides(List<String> curbsides, GHRequest request) {
         if (!curbsides.isEmpty()) {

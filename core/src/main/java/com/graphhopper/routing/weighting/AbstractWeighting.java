@@ -23,12 +23,14 @@ import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.FetchMode;
 
+import at.prismasolutions.graphhopper.extension.ExtendedWeighting;
+
 import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
 
 /**
  * @author Peter Karich
  */
-public abstract class AbstractWeighting implements Weighting {
+public abstract class AbstractWeighting extends ExtendedWeighting {
     protected final FlagEncoder flagEncoder;
     protected final DecimalEncodedValue avSpeedEnc;
     protected final BooleanEncodedValue accessEnc;

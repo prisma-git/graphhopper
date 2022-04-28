@@ -101,6 +101,14 @@ public class GHDirectory implements Directory {
     public DataAccess create(String name) {
         return create(name, getDefault(name, typeFallback));
     }
+    
+    @Override
+    public DataAccess findOrCreate(String name) {
+    	if(map.containsKey(name)) {
+    		return map.get(name);
+    	}
+        return create(name);
+    }
 
     @Override
     public DataAccess create(String name, int segmentSize) {

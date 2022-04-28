@@ -115,7 +115,11 @@ public final class CustomWeighting extends AbstractWeighting {
         if (Double.isInfinite(distanceCosts))
             return Double.POSITIVE_INFINITY;
         double priority = edgeToPriorityMapping.get(edgeState, reverse);
-        return seconds / priority + distanceCosts;
+        double factor = this.getFactor(edgeState, reverse);
+        if(factor <0) {
+        	return Double.POSITIVE_INFINITY;
+        }
+        return (seconds / priority + distanceCosts)*factor;
     }
 
     double calcSeconds(double distance, EdgeIteratorState edgeState, boolean reverse) {
