@@ -16,7 +16,6 @@ public abstract class ExtendedWeighting implements Weighting {
 	
     protected PMap hints;
     protected GHEventMapper mapper;
-    private static final Logger logger = LoggerFactory.getLogger(ExtendedWeighting.class);
     @Override
 	public void setHints(PMap hints) {
 		this.hints = hints;
@@ -27,9 +26,7 @@ public abstract class ExtendedWeighting implements Weighting {
     }
     protected double getFactor(EdgeIteratorState edgeState, boolean reverse) {
     	double factor = 1;
-    	logger.info("trying to get factor");
     	if(this.mapper != null && this.hints != null) {
-    		logger.info("looking for ghEvents");
     		List<GHEvent> events = this.mapper.getGHEvents(edgeState.getEdge());
     		if(events != null) {
     			for(GHEvent event : events) {
