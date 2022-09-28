@@ -53,6 +53,7 @@ import static com.graphhopper.util.Parameters.Routing.*;
 import static java.util.stream.Collectors.toList;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Resource to use GraphHopper in a remote client application like mobile or browser. Note: If type
@@ -176,7 +177,16 @@ public Response getState() {
     		GraphHopperWithId idhopper = (GraphHopperWithId) this.graphHopper;
     		json.putPOJO("edges", idhopper.getGraphHopperStorage().getEdges());
     		json.putPOJO("events",idhopper.getManager().getMapper().getEvents());
-    		json.putPOJO("mapping",idhopper.getManager().getMapper().getMapping());
+    		
+    		Integer[] mapping = idhopper.getManager().getMapper().getMapping();
+    		Map<Integer, Integer> map = new HashMap<Integer, Integer>();
+    		for(int i=0; i<mapping.length; i++) {
+    			if(mapping[i]!= null) {
+    				map.put(i,mapping[i]);
+    			}
+    		}
+    		json.putPOJO("mapping",map);
+    		json.putPOJO("allEvents", idhopper.getManager().getMapper().getAllEvents());
     	}
     	return Response.ok(json).
         type(MediaType.APPLICATION_JSON).

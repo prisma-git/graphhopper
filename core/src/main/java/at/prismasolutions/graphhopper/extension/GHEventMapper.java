@@ -13,6 +13,7 @@ public class GHEventMapper {
 	private GraphHopperWithId hopper;
 	private GHEvent[] events;
 	private Integer[] mapping;
+	private List<GHEvent> allEvents;
 	
 
 	private GHEventReader reader = new GHEventReader();
@@ -36,6 +37,12 @@ public class GHEventMapper {
 
 	public Integer[] getMapping() {
 		return mapping;
+	}
+
+
+
+	public List<GHEvent> getAllEvents() {
+		return allEvents;
 	}
 
 
@@ -65,6 +72,7 @@ public class GHEventMapper {
 		for (File file : files) {
 			newEvents.addAll(this.reader.read(file));
 		}
+		
 		this.createMapping(newEvents);
 	}
 
@@ -101,6 +109,7 @@ public class GHEventMapper {
 			this.mapping = mappingArr;
 			GHEvent[] arr = new GHEvent[eventArr.size()];
 			this.events = eventArr.toArray(arr);
+			this.allEvents = newEvents;
 		} finally {
 			this.writeLock.unlock();
 		}
