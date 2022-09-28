@@ -1,5 +1,4 @@
-{
-  "ghEvents": [
+[
     {
       "type": 0,
       "startDate": "2022-02-02T14:25:34+02:00",
@@ -32,5 +31,4 @@
       "parameterValue": 3.5,
       "factor": -1
     }
-  ]
-}
+]
