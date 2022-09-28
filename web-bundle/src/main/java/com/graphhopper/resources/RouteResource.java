@@ -17,6 +17,7 @@
  */
 package com.graphhopper.resources;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.graphhopper.GHRequest;
@@ -202,16 +203,23 @@ public Response getState() {
         			List<PathDetail> ghEvents = new ArrayList<PathDetail>();
         			GraphHopperWithId idhopper = (GraphHopperWithId) this.graphHopper;
         			for(PathDetail id : ids) {
-        				long osmId = idhopper.getWay((int)id.getValue());
-        				List<GHEvent> events = idhopper.getManager().getMapper().getGHEvents((int)id.getValue());
+        				long osmId = idhopper.getWay((int)id.getValue());        				
         				PathDetail osmDetail = new PathDetail(osmId);
         				osmDetail.setFirst(id.getFirst());
         				osmDetail.setLast(id.getLast());
-        				PathDetail eventDetail = new PathDetail(events);
-        				eventDetail.setFirst(id.getFirst());
-        				eventDetail.setLast(id.getLast());
         				osmIds.add(osmDetail);
-        				ghEvents.add(eventDetail);
+        				
+        				List<GHEvent> events = idhopper.getManager().getMapper().getGHEvents((int)id.getValue());
+						if (events != null && !events.isEmpty()) {
+							ArrayNode node = JsonNodeFactory.instance.arrayNode();
+							for(GHEvent ev : events) {
+								node.addPOJO(ev);
+							}
+							PathDetail eventDetail = new PathDetail(node);
+							eventDetail.setFirst(id.getFirst());
+							eventDetail.setLast(id.getLast());
+							ghEvents.add(eventDetail);
+						}
         			}
         			path.getPathDetails().put("osmIds", osmIds);
         			path.getPathDetails().put("events", ghEvents);
