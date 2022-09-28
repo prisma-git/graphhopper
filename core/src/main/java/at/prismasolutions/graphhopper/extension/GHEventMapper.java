@@ -13,6 +13,8 @@ public class GHEventMapper {
 	private GraphHopperWithId hopper;
 	private GHEvent[] events;
 	private Integer[] mapping;
+	
+
 	private GHEventReader reader = new GHEventReader();
 
 	private ReadWriteLock lock = new ReentrantReadWriteLock();
@@ -20,11 +22,23 @@ public class GHEventMapper {
 	private Lock readLock = lock.readLock();
 
 	private final static org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(GHEventMapper.class);
-
+	
 	public GHEventMapper(GraphHopperWithId hopper) {
 		this.hopper = hopper;
 		this.mapping = new Integer[this.hopper.getGraphHopperStorage().getEdges()];
 	}
+	
+	
+	
+	public GHEvent[] getEvents() {
+		return events;
+	}
+
+	public Integer[] getMapping() {
+		return mapping;
+	}
+
+
 
 	public List<GHEvent> getGHEvents(int edgeId) {
 		readLock.lock();
@@ -90,7 +104,5 @@ public class GHEventMapper {
 		} finally {
 			this.writeLock.unlock();
 		}
-
 	}
-
 }

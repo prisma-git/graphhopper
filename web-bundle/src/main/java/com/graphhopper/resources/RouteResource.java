@@ -17,6 +17,8 @@
  */
 package com.graphhopper.resources;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.graphhopper.GHRequest;
 import com.graphhopper.GHResponse;
 import com.graphhopper.GraphHopper;
@@ -165,7 +167,21 @@ public class RouteResource {
                             build();
         }
     }
-
+    @GET
+    @Path("state")
+    @Produces({MediaType.APPLICATION_JSON})
+public Response getState() {
+    	ObjectNode json = JsonNodeFactory.instance.objectNode();
+    	if(this.graphHopper instanceof GraphHopperWithId) {
+    		GraphHopperWithId idhopper = (GraphHopperWithId) this.graphHopper;
+    		json.putPOJO("edges", idhopper.getGraphHopperStorage().getEdges());
+    		json.putPOJO("events",idhopper.getManager().getMapper().getEvents());
+    		json.putPOJO("mapping",idhopper.getManager().getMapper().getMapping());
+    	}
+    	return Response.ok(json).
+        type(MediaType.APPLICATION_JSON).
+        build();
+}
     private void addExtension(GHResponse ghResponse) {
     	logger.info("trying to add extension");
     	if(this.graphHopper instanceof GraphHopperWithId) {
