@@ -5,9 +5,6 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.PMap;
@@ -80,23 +77,23 @@ public abstract class ExtendedWeighting implements Weighting {
 		}
 		
 		if (event.getParameterName() != null) {
-			String param = params.getString(event.getParameterName(), null);
-			if (param != null) {
+			double param = params.getDouble(event.getParameterName(), Double.NaN);
+			if (!Double.isNaN(param)) {
 				switch (event.getType()) {
 				case DESCRIPTION:
 					return false;
 				case EQUAL:
-					if (!event.getParameterValue().equals(Double.parseDouble(param))) {
+					if (!event.getParameterValue().equals(param)) {
 						return false;
 					}
 					break;
 				case GREATERTHAN:
-					if (!(event.getParameterValue().compareTo(Double.parseDouble(param))>=0)) {
+					if (!(param > event.getParameterValue())) {
 						return false;
 					}
 					break;
 				case LESSERTHAN:
-					if (!(event.getParameterValue().compareTo(Double.parseDouble(param))<=0)) {
+					if (!(param < event.getParameterValue())) {
 						return false;
 					}
 					break;
@@ -105,6 +102,8 @@ public abstract class ExtendedWeighting implements Weighting {
 					break;
 
 				}
+			}else {
+				return false;
 			}
 		}
 		
