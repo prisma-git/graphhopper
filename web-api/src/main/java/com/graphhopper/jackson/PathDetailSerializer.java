@@ -19,6 +19,7 @@ package com.graphhopper.jackson;
 
 import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.graphhopper.util.details.PathDetail;
@@ -44,6 +45,8 @@ public class PathDetailSerializer extends JsonSerializer<PathDetail> {
             gen.writeBoolean((Boolean) value.getValue());
         else if (value.getValue() instanceof String)
             gen.writeString((String) value.getValue());
+        else if (value.getValue() instanceof JsonNode)
+            gen.writeTree((JsonNode)value.getValue());
         else if (value.getValue() == null)
             gen.writeNull();
         else
