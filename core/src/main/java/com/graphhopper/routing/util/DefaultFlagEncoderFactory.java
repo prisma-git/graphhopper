@@ -19,6 +19,8 @@ package com.graphhopper.routing.util;
 
 import com.graphhopper.util.PMap;
 
+import at.prismasolutions.graphhopper.extension.FreeFlagEncoder;
+
 /**
  * This class creates FlagEncoders that are already included in the GraphHopper distribution.
  *
@@ -56,6 +58,9 @@ public class DefaultFlagEncoderFactory implements FlagEncoderFactory {
 
         if (name.equals(WHEELCHAIR))
             return new WheelchairFlagEncoder(configuration);
+        
+        if (name.equals(FREE))
+            return new FreeFlagEncoder(configuration);
 
         throw new IllegalArgumentException("entry in encoder list not supported: " + name);
     }
