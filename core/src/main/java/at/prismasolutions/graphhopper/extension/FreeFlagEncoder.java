@@ -7,16 +7,13 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.graphhopper.GraphHopper;
+import com.graphhopper.reader.ReaderNode;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
 import com.graphhopper.routing.ev.EncodedValue;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RouteNetwork;
 import com.graphhopper.routing.util.AbstractFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.EncodingManager.Access;
-import com.graphhopper.routing.weighting.PriorityWeighting;
 import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.PMap;
@@ -24,12 +21,14 @@ import com.graphhopper.util.PMap;
 public class FreeFlagEncoder extends AbstractFlagEncoder {
 
     static final double MEAN_SPEED = 5;
-    private static final Logger logger = LoggerFactory.getLogger(GraphHopper.class);
+    private static final Logger logger = LoggerFactory.getLogger(FreeFlagEncoder.class);
 
 	protected FreeFlagEncoder(int speedBits, double speedFactor, int maxTurnCosts) {
 		super(speedBits, speedFactor, maxTurnCosts);
 		this.restrictions.clear();
 		this.restrictedValues.clear();	
+		this.intendedValues.clear();
+		
 		maxPossibleSpeed = (int) MEAN_SPEED;
 	}
 	public FreeFlagEncoder(PMap properties) {
@@ -71,8 +70,12 @@ public class FreeFlagEncoder extends AbstractFlagEncoder {
         if (super.supports(feature))
             return true;
 
-        return PriorityWeighting.class.isAssignableFrom(feature);
+        return false;
     }
+	@Override
+	public boolean isBarrier(ReaderNode node) {
+		return false;
+	}
 	
 	@Override
     public String toString() {
