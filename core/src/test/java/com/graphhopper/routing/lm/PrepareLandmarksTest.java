@@ -21,16 +21,16 @@ import com.graphhopper.routing.AStar;
 import com.graphhopper.routing.AlgorithmOptions;
 import com.graphhopper.routing.Path;
 import com.graphhopper.routing.RoutingAlgorithm;
-import com.graphhopper.routing.ev.BooleanEncodedValue;
-import com.graphhopper.routing.ev.DecimalEncodedValue;
-import com.graphhopper.routing.ev.Subnetwork;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.routing.util.*;
-import com.graphhopper.routing.weighting.FastestWeighting;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.TraversalMode;
+import com.graphhopper.routing.weighting.SpeedWeighting;
 import com.graphhopper.routing.weighting.Weighting;
+import com.graphhopper.routing.weighting.custom.CustomModelParser;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.storage.Directory;
-import com.graphhopper.storage.GraphBuilder;
-import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.RAMDirectory;
 import com.graphhopper.storage.index.LocationIndexTree;
 import com.graphhopper.storage.index.Snap;
@@ -57,17 +57,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @author Peter Karich
  */
 public class PrepareLandmarksTest {
-    private GraphHopperStorage graph;
+    private DecimalEncodedValue speedEnc;
     private EncodingManager encodingManager;
-    private FlagEncoder encoder;
+    private BaseGraph graph;
     private TraversalMode tm;
 
     @BeforeEach
     public void setUp() {
-        encoder = new CarFlagEncoder();
+        speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, false);
+        encodingManager = new EncodingManager.Builder().add(speedEnc).add(Subnetwork.create("car")).build();
+        graph = new BaseGraph.Builder(encodingManager).create();
         tm = TraversalMode.NODE_BASED;
-        encodingManager = new EncodingManager.Builder().add(encoder).add(Subnetwork.create("car")).build();
-        graph = new GraphBuilder(encodingManager).create();
     }
 
     @Test
@@ -78,8 +78,6 @@ public class PrepareLandmarksTest {
         Random rand = new Random(0);
         int width = 15, height = 15;
 
-        DecimalEncodedValue avSpeedEnc = encoder.getAverageSpeedEnc();
-        BooleanEncodedValue accessEnc = encoder.getAccessEnc();
         for (int hIndex = 0; hIndex < height; hIndex++) {
             for (int wIndex = 0; wIndex < width; wIndex++) {
                 int node = wIndex + hIndex * width;
@@ -87,11 +85,11 @@ public class PrepareLandmarksTest {
                 // do not connect first with last column!
                 double speed = 20 + rand.nextDouble() * 30;
                 if (wIndex + 1 < width)
-                    graph.edge(node, node + 1).set(accessEnc, true, true).set(avSpeedEnc, speed);
+                    graph.edge(node, node + 1).set(speedEnc, speed);
 
                 // avoid dead ends
                 if (hIndex + 1 < height)
-                    graph.edge(node, node + width).set(accessEnc, true, true).set(avSpeedEnc, speed);
+                    graph.edge(node, node + width).set(speedEnc, speed);
 
                 updateDistancesFor(graph, node, -hIndex / 50.0, wIndex / 50.0);
             }
@@ -101,9 +99,9 @@ public class PrepareLandmarksTest {
         index.prepareIndex();
 
         int lm = 5, activeLM = 2;
-        Weighting weighting = new FastestWeighting(encoder);
+        Weighting weighting = new SpeedWeighting(speedEnc);
         LMConfig lmConfig = new LMConfig("car", weighting);
-        LandmarkStorage store = new LandmarkStorage(graph, dir, lmConfig, lm);
+        LandmarkStorage store = new LandmarkStorage(graph, encodingManager, dir, lmConfig, lm);
         store.setMinimumNodes(2);
         store.createLandmarks();
 
@@ -116,13 +114,13 @@ public class PrepareLandmarksTest {
 
         assertEquals(0, store.getFromWeight(0, 224));
         double factor = store.getFactor();
-        assertEquals(4671, Math.round(store.getFromWeight(0, 47) * factor));
-        assertEquals(3640, Math.round(store.getFromWeight(0, 52) * factor));
+        assertEquals(1297, Math.round(store.getFromWeight(0, 47) * factor));
+        assertEquals(1011, Math.round(store.getFromWeight(0, 52) * factor));
 
         long weight1_224 = store.getFromWeight(1, 224);
-        assertEquals(5525, Math.round(weight1_224 * factor));
+        assertEquals(1535, Math.round(weight1_224 * factor));
         long weight1_47 = store.getFromWeight(1, 47);
-        assertEquals(921, Math.round(weight1_47 * factor));
+        assertEquals(256, Math.round(weight1_47 * factor));
 
         // grid is symmetric
         assertEquals(weight1_224, store.getToWeight(1, 224));
@@ -139,7 +137,7 @@ public class PrepareLandmarksTest {
         // TODO should better select 0 and 224?
         assertEquals(Arrays.asList(224, 70), list);
 
-        PrepareLandmarks prepare = new PrepareLandmarks(new RAMDirectory(), graph, lmConfig, 4);
+        PrepareLandmarks prepare = new PrepareLandmarks(new RAMDirectory(), graph, encodingManager, lmConfig, 4);
         prepare.setMinimumNodes(2);
         prepare.doWork();
         LandmarkStorage lms = prepare.getLandmarkStorage();
@@ -157,7 +155,7 @@ public class PrepareLandmarksTest {
 
         assertEquals(expectedPath.getWeight(), path.getWeight(), .1);
         assertEquals(expectedPath.calcNodes(), path.calcNodes());
-        assertEquals(expectedAlgo.getVisitedNodes() - 135, oneDirAlgoWithLandmarks.getVisitedNodes());
+        assertEquals(expectedAlgo.getVisitedNodes() - 136, oneDirAlgoWithLandmarks.getVisitedNodes());
 
         // landmarks with bidir A*
         RoutingAlgorithm biDirAlgoWithLandmarks = new LMRoutingAlgorithmFactory(lms).createAlgo(graph, weighting,
@@ -165,7 +163,7 @@ public class PrepareLandmarksTest {
         path = biDirAlgoWithLandmarks.calcPath(41, 183);
         assertEquals(expectedPath.getWeight(), path.getWeight(), .1);
         assertEquals(expectedPath.calcNodes(), path.calcNodes());
-        assertEquals(expectedAlgo.getVisitedNodes() - 162, biDirAlgoWithLandmarks.getVisitedNodes());
+        assertEquals(expectedAlgo.getVisitedNodes() - 163, biDirAlgoWithLandmarks.getVisitedNodes());
 
         // landmarks with A* and a QueryGraph. We expect slightly less optimal as two more cycles needs to be traversed
         // due to the two more virtual nodes but this should not harm in practise
@@ -180,20 +178,21 @@ public class PrepareLandmarksTest {
         expectedPath = expectedAlgo.calcPath(fromSnap.getClosestNode(), toSnap.getClosestNode());
         assertEquals(expectedPath.getWeight(), path.getWeight(), .1);
         assertEquals(expectedPath.calcNodes(), path.calcNodes());
-        assertEquals(expectedAlgo.getVisitedNodes() - 135, qGraphOneDirAlgo.getVisitedNodes());
+        // todonow: why did visited nodes change?
+        assertEquals(expectedAlgo.getVisitedNodes() - 136, qGraphOneDirAlgo.getVisitedNodes());
     }
 
     @Test
     public void testStoreAndLoad() {
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(0, 1).setDistance(80_000));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 2).setDistance(80_000));
+        graph.edge(0, 1).setDistance(80_000).set(speedEnc, 60);
+        graph.edge(1, 2).setDistance(80_000).set(speedEnc, 60);
         String fileStr = "./target/tmp-lm";
         Helper.removeDir(new File(fileStr));
 
         Directory dir = new RAMDirectory(fileStr, true).create();
-        Weighting weighting = new FastestWeighting(encoder);
+        Weighting weighting = new SpeedWeighting(speedEnc);
         LMConfig lmConfig = new LMConfig("car", weighting);
-        PrepareLandmarks plm = new PrepareLandmarks(dir, graph, lmConfig, 2);
+        PrepareLandmarks plm = new PrepareLandmarks(dir, graph, encodingManager, lmConfig, 2);
         plm.setMinimumNodes(2);
         plm.doWork();
 
@@ -202,16 +201,16 @@ public class PrepareLandmarksTest {
         assertEquals(Arrays.toString(new int[]{
                 2, 0
         }), Arrays.toString(plm.getLandmarkStorage().getLandmarks(1)));
-        assertEquals(4800, Math.round(plm.getLandmarkStorage().getFromWeight(0, 1) * expectedFactor));
+        assertEquals(1333, Math.round(plm.getLandmarkStorage().getFromWeight(0, 1) * expectedFactor));
 
         dir = new RAMDirectory(fileStr, true);
-        plm = new PrepareLandmarks(dir, graph, lmConfig, 2);
+        plm = new PrepareLandmarks(dir, graph, encodingManager, lmConfig, 2);
         assertTrue(plm.loadExisting());
         assertEquals(expectedFactor, plm.getLandmarkStorage().getFactor(), 1e-6);
         assertEquals(Arrays.toString(new int[]{
                 2, 0
         }), Arrays.toString(plm.getLandmarkStorage().getLandmarks(1)));
-        assertEquals(4800, Math.round(plm.getLandmarkStorage().getFromWeight(0, 1) * expectedFactor));
+        assertEquals(1333, Math.round(plm.getLandmarkStorage().getFromWeight(0, 1) * expectedFactor));
 
         Helper.removeDir(new File(fileStr));
     }

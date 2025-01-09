@@ -20,9 +20,11 @@ package com.graphhopper.routing.subnetwork;
 
 import com.carrotsearch.hppc.IntArrayList;
 import com.carrotsearch.hppc.cursors.IntCursor;
-import com.graphhopper.routing.util.*;
-import com.graphhopper.storage.GraphBuilder;
-import com.graphhopper.storage.GraphHopperStorage;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
+import com.graphhopper.routing.ev.EncodedValue;
+import com.graphhopper.routing.util.EdgeFilter;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.util.GHUtility;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -33,28 +35,35 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TarjanSCCTest {
-    private final FlagEncoder encoder = new CarFlagEncoder();
-    private final EncodingManager em = EncodingManager.create(encoder);
-    private final EdgeFilter edgeFilter = AccessFilter.outEdges(encoder.getAccessEnc());
+    private final DecimalEncodedValue speedEnc;
+    private final BaseGraph graph;
+    private final EdgeFilter edgeFilter;
+
+    public TarjanSCCTest() {
+        speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, true);
+        EncodedValue.InitializerConfig evConf = new EncodedValue.InitializerConfig();
+        speedEnc.init(evConf);
+        graph = new BaseGraph.Builder(evConf.getRequiredBytes()).create();
+        edgeFilter = edge -> edge.get(speedEnc) > 0;
+    }
 
     @Test
     public void testFindComponents() {
-        GraphHopperStorage graph = new GraphBuilder(em).create();
         // big network (has two components actually, because 9->12 is a one-way)
         //    ---
         //  /     \
         // 4 < 1 - 2
         // |   |
         // <-- 8 - 11 - 12 < 9 - 15
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 2).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(1, 4).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 8).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(2, 4).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(8, 4).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(8, 11).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(12, 11).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(9, 12).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(9, 15).setDistance(1));
+        graph.edge(1, 2).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(1, 4).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(1, 8).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(2, 4).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(8, 4).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(8, 11).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(12, 11).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(9, 12).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(9, 15).setDistance(1).set(speedEnc, 10, 10);
 
         // large network
         // 5 --------
@@ -62,17 +71,17 @@ class TarjanSCCTest {
         // 3 - 0 - 13
         //   \ |
         //     7
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(0, 13).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(0, 3).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(0, 7).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(3, 7).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(3, 5).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(13, 5).setDistance(1));
+        graph.edge(0, 13).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(0, 3).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(0, 7).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(3, 7).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(3, 5).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(13, 5).setDistance(1).set(speedEnc, 10, 10);
 
         // small network
         // 6 - 14 - 10
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(6, 14).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(10, 14).setDistance(1));
+        graph.edge(6, 14).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(10, 14).setDistance(1).set(speedEnc, 10, 10);
 
         TarjanSCC.ConnectedComponents scc = TarjanSCC.findComponentsRecursive(graph, edgeFilter, false);
         List<IntArrayList> components = scc.getComponents();
@@ -93,18 +102,17 @@ class TarjanSCCTest {
         // 0->1->3->4->5->6->7
         //  \ |      \<-----/
         //    2
-        GraphHopperStorage graph = new GraphBuilder(em).create();
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(0, 1).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(1, 2).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(2, 0).setDistance(1));
+        graph.edge(0, 1).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(1, 2).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(2, 0).setDistance(1).set(speedEnc, 10, 0);
 
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(1, 3).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(3, 4).setDistance(1));
+        graph.edge(1, 3).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(3, 4).setDistance(1).set(speedEnc, 10, 0);
 
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(4, 5).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(5, 6).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(6, 7).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(7, 4).setDistance(1));
+        graph.edge(4, 5).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(5, 6).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(6, 7).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(7, 4).setDistance(1).set(speedEnc, 10, 0);
 
         TarjanSCC.ConnectedComponents scc = TarjanSCC.findComponentsRecursive(graph, edgeFilter, false);
         List<IntArrayList> components = scc.getComponents();
@@ -130,7 +138,6 @@ class TarjanSCCTest {
 
     @Test
     public void testTarjan_issue761() {
-        GraphHopperStorage graph = new GraphBuilder(em).create();
         //     11-10-9
         //     |     |
         // 0-1-2->3->4->5
@@ -142,30 +149,30 @@ class TarjanSCCTest {
         //        8        15-16
 
         // oneway main road
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(0, 1).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 2).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(2, 3).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(3, 4).setDistance(1));
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(4, 5).setDistance(1));
+        graph.edge(0, 1).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(1, 2).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(2, 3).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(3, 4).setDistance(1).set(speedEnc, 10, 0);
+        graph.edge(4, 5).setDistance(1).set(speedEnc, 10, 0);
 
         // going south from main road
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(3, 6).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(6, 7).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(7, 8).setDistance(1));
+        graph.edge(3, 6).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(6, 7).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(7, 8).setDistance(1).set(speedEnc, 10, 10);
 
         // connects the two nodes 2 and 4
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(4, 9).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(9, 10).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(10, 11).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(11, 2).setDistance(1));
+        graph.edge(4, 9).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(9, 10).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(10, 11).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(11, 2).setDistance(1).set(speedEnc, 10, 10);
 
         // eastern part (only connected by a single directed edge to the rest of the graph)
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(5, 12).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(12, 13).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(13, 14).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(14, 15).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(15, 13).setDistance(1));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(15, 16).setDistance(1));
+        graph.edge(5, 12).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(12, 13).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(13, 14).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(14, 15).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(15, 13).setDistance(1).set(speedEnc, 10, 10);
+        graph.edge(15, 16).setDistance(1).set(speedEnc, 10, 10);
 
         TarjanSCC.ConnectedComponents scc = TarjanSCC.findComponentsRecursive(graph, edgeFilter, false);
         assertEquals(2, scc.getTotalComponents());
@@ -185,16 +192,14 @@ class TarjanSCCTest {
     }
 
     private void doImplicitVsExplicit(boolean excludeSingle) {
-        GraphHopperStorage g = new GraphBuilder(em).create();
         long seed = System.nanoTime();
         Random rnd = new Random(seed);
-        GHUtility.buildRandomGraph(g, rnd, 1_000, 2, true, true,
-                encoder.getAccessEnc(), encoder.getAverageSpeedEnc(), 60d, 0.8, 0.7, 0);
-        TarjanSCC.ConnectedComponents implicit = TarjanSCC.findComponentsRecursive(g, edgeFilter, excludeSingle);
-        TarjanSCC.ConnectedComponents explicit = TarjanSCC.findComponents(g, edgeFilter, excludeSingle);
+        GHUtility.buildRandomGraph(graph, rnd, 1_000, 2, true, speedEnc, 60d, 0.7, 0);
+        TarjanSCC.ConnectedComponents implicit = TarjanSCC.findComponentsRecursive(graph, edgeFilter, excludeSingle);
+        TarjanSCC.ConnectedComponents explicit = TarjanSCC.findComponents(graph, edgeFilter, excludeSingle);
 
-        assertEquals(g.getNodes(), implicit.getNodes(), "total number of nodes in connected components should equal number of nodes in graph");
-        assertEquals(g.getNodes(), explicit.getNodes(), "total number of nodes in connected components should equal number of nodes in graph");
+        assertEquals(graph.getNodes(), implicit.getNodes(), "total number of nodes in connected components should equal number of nodes in graph");
+        assertEquals(graph.getNodes(), explicit.getNodes(), "total number of nodes in connected components should equal number of nodes in graph");
 
         // Unfortunately the results are not expected to be identical because the edges are traversed in reversed order
         // for the explicit stack version. To make sure the components are the same we need to check for every node that
@@ -203,13 +208,13 @@ class TarjanSCCTest {
         Set<IntWithArray> componentsExplicit = buildComponentSet(explicit.getComponents());
         if (!componentsExplicit.equals(componentsImplicit)) {
             System.out.println("seed: " + seed);
-            GHUtility.printGraphForUnitTest(g, encoder);
+            GHUtility.printGraphForUnitTest(graph, speedEnc);
             assertEquals(componentsExplicit, componentsImplicit, "The components found for this graph are different between the implicit and explicit implementation");
         }
 
         if (!implicit.getSingleNodeComponents().equals(explicit.getSingleNodeComponents())) {
             System.out.println("seed: " + seed);
-            GHUtility.printGraphForUnitTest(g, encoder);
+            GHUtility.printGraphForUnitTest(graph, speedEnc);
             assertEquals(implicit.getSingleNodeComponents(), explicit.getSingleNodeComponents());
         }
 

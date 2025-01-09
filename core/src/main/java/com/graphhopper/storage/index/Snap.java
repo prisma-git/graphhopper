@@ -18,7 +18,7 @@
 package com.graphhopper.storage.index;
 
 import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.storage.Graph;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 import com.graphhopper.util.shapes.GHPoint3D;
@@ -53,7 +53,7 @@ public class Snap {
 
     /**
      * Returns the closest matching node. This is either a tower node of the base graph
-     * or a virtual node (see also {@link QueryGraph#create(Graph, List)}).
+     * or a virtual node (see also {@link QueryGraph#create(BaseGraph, List)}).
      *
      * @return {@link #INVALID_NODE} if nothing found, this should be avoided via a call of 'isValid'
      */
@@ -124,8 +124,13 @@ public class Snap {
         return snappedPoint;
     }
 
+    public void setSnappedPoint(GHPoint3D point) {
+        this.snappedPoint = point;
+    }
+
     /**
-     * Calculates the closest point on the edge from the query point.
+     * Calculates the closest point on the edge from the query point. If too close to a tower or pillar node this method
+     * might change the snappedPosition and wayIndex.
      */
     public void calcSnappedPoint(DistanceCalc distCalc) {
         if (closestEdge == null)
@@ -145,12 +150,33 @@ public class Snap {
         double queryLat = getQueryPoint().lat, queryLon = getQueryPoint().lon;
         double adjLat = fullPL.getLat(wayIndex + 1), adjLon = fullPL.getLon(wayIndex + 1);
         if (distCalc.validEdgeDistance(queryLat, queryLon, tmpLat, tmpLon, adjLat, adjLon)) {
-            GHPoint tmpPoint = distCalc.calcCrossingPointToEdge(queryLat, queryLon, tmpLat, tmpLon, adjLat, adjLon);
+            GHPoint crossingPoint = distCalc.calcCrossingPointToEdge(queryLat, queryLon, tmpLat, tmpLon, adjLat, adjLon);
             double adjEle = fullPL.getEle(wayIndex + 1);
-            snappedPoint = new GHPoint3D(tmpPoint.lat, tmpPoint.lon, (tmpEle + adjEle) / 2);
-        } else
-            // outside of edge boundaries
-            snappedPoint = new GHPoint3D(tmpLat, tmpLon, tmpEle);
+
+            // We want to prevent extra virtual nodes and very short virtual edges in case the snap/crossing point is
+            // very close to a tower node. Since we delayed the calculation of the crossing point until here, we need
+            // to correct the Snap.Position in these cases. Note that it is possible that the query point is very far
+            // from the tower node, but the crossing point is still very close to it.
+            if (considerEqual(crossingPoint.lat, crossingPoint.lon, tmpLat, tmpLon)) {
+                snappedPosition = wayIndex == 0 ? Position.TOWER : Position.PILLAR;
+                snappedPoint = new GHPoint3D(tmpLat, tmpLon, tmpEle);
+                closestNode = wayIndex == 0 ? closestEdge.getBaseNode() : closestNode;
+            } else if (considerEqual(crossingPoint.lat, crossingPoint.lon, adjLat, adjLon)) {
+                wayIndex++;
+                snappedPosition = wayIndex == fullPL.size() - 1 ? Position.TOWER : Position.PILLAR;
+                snappedPoint = new GHPoint3D(adjLat, adjLon, adjEle);
+                closestNode = wayIndex == fullPL.size() - 1 ? closestEdge.getAdjNode() : closestNode;
+            } else {
+                snappedPoint = new GHPoint3D(crossingPoint.lat, crossingPoint.lon, (tmpEle + adjEle) / 2);
+            }
+        } else {
+            // outside of edge segment [wayIndex, wayIndex+1] should not happen for EDGE
+            assert false : "incorrect pos: " + snappedPosition + " for " + snappedPoint + ", " + fullPL + ", " + wayIndex;
+        }
+    }
+
+    public static boolean considerEqual(double lat, double lon, double lat2, double lon2) {
+        return Math.abs(lat - lat2) < 1e-6 && Math.abs(lon - lon2) < 1e-6;
     }
 
     @Override

@@ -30,9 +30,9 @@ import com.graphhopper.Trip;
 import com.graphhopper.gtfs.fare.Fares;
 import com.graphhopper.routing.InstructionsFromEdges;
 import com.graphhopper.routing.Path;
+import com.graphhopper.routing.ev.EncodedValueLookup;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
-import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.util.*;
 import com.graphhopper.util.details.PathDetail;
 import com.graphhopper.util.details.PathDetailsBuilderFactory;
@@ -58,24 +58,35 @@ class TripFromLabel {
     private static final Logger logger = LoggerFactory.getLogger(TripFromLabel.class);
 
     private final Graph graph;
+    private final EncodedValueLookup encodedValueLookup;
     private final GtfsStorage gtfsStorage;
     private final RealtimeFeed realtimeFeed;
     private final GeometryFactory geometryFactory = new GeometryFactory();
     private final PathDetailsBuilderFactory pathDetailsBuilderFactory;
+    private final double walkSpeedKmH;
 
-    TripFromLabel(Graph graph, GtfsStorage gtfsStorage, RealtimeFeed realtimeFeed, PathDetailsBuilderFactory pathDetailsBuilderFactory) {
+    TripFromLabel(Graph graph, EncodedValueLookup encodedValueLookup, GtfsStorage gtfsStorage, RealtimeFeed realtimeFeed, PathDetailsBuilderFactory pathDetailsBuilderFactory, double walkSpeedKmH) {
         this.graph = graph;
+        this.encodedValueLookup = encodedValueLookup;
         this.gtfsStorage = gtfsStorage;
         this.realtimeFeed = realtimeFeed;
         this.pathDetailsBuilderFactory = pathDetailsBuilderFactory;
+        this.walkSpeedKmH = walkSpeedKmH;
     }
 
-    ResponsePath createResponsePath(Translation tr, PointList waypoints, Graph queryGraph, Weighting accessWeighting, Weighting egressWeighting, List<Label.Transition> solution, List<String> requestedPathDetails) {
+    ResponsePath createResponsePath(Translation tr, PointList waypoints, Graph queryGraph, Weighting accessWeighting, Weighting egressWeighting, Weighting transferWeighting, List<Label.Transition> solution, List<String> requestedPathDetails) {
         final List<List<Label.Transition>> partitions = parsePathToPartitions(solution);
 
         final List<Trip.Leg> legs = new ArrayList<>();
         for (int i = 0; i < partitions.size(); i++) {
-            legs.addAll(parsePartitionToLegs(partitions.get(i), queryGraph, i == partitions.size() - 1 ? egressWeighting : accessWeighting, tr, requestedPathDetails));
+            Weighting weighting;
+            if (i == 0)
+                weighting = accessWeighting;
+            else if (i == partitions.size() - 1)
+                weighting = egressWeighting;
+            else
+                weighting = transferWeighting;
+            legs.addAll(parsePartitionToLegs(partitions.get(i), queryGraph, encodedValueLookup, weighting, tr, requestedPathDetails));
         }
 
         if (legs.size() > 1 && legs.get(0) instanceof Trip.WalkLeg) {
@@ -108,7 +119,7 @@ class TripFromLabel {
                 }
                 instructions.addAll(theseInstructions);
                 Map<String, List<PathDetail>> shiftedLegPathDetails = shift(((Trip.WalkLeg) leg).details, previousPointsCount);
-                shiftedLegPathDetails.forEach((k, v) -> pathDetails.merge(k, shiftedLegPathDetails.get(k), (a,b) -> Lists.newArrayList(Iterables.concat(a, b))));
+                shiftedLegPathDetails.forEach((k, v) -> pathDetails.merge(k, shiftedLegPathDetails.get(k), (a, b) -> Lists.newArrayList(Iterables.concat(a, b))));
             } else if (leg instanceof Trip.PtLeg) {
                 final Trip.PtLeg ptLeg = ((Trip.PtLeg) leg);
                 final PointList pl;
@@ -325,7 +336,7 @@ class TripFromLabel {
     // One could argue that one should never write a parser
     // by hand, because it is always ugly, but use a parser library.
     // The code would then read like a specification of what paths through the graph mean.
-    private List<Trip.Leg> parsePartitionToLegs(List<Label.Transition> path, Graph graph, Weighting weighting, Translation tr, List<String> requestedPathDetails) {
+    private List<Trip.Leg> parsePartitionToLegs(List<Label.Transition> path, Graph graph, EncodedValueLookup encodedValueLookup, Weighting weighting, Translation tr, List<String> requestedPathDetails) {
         if (path.size() <= 1) {
             return Collections.emptyList();
         }
@@ -364,7 +375,12 @@ class TripFromLabel {
                             geometryFactory.createLineString(stops.stream().map(s -> s.geometry.getCoordinate()).toArray(Coordinate[]::new))));
                     partition = null;
                     if (edge.getType() == GtfsStorage.EdgeType.TRANSFER) {
-                        feedId = edge.getPlatformDescriptor().feed_id;;
+                        feedId = edge.getPlatformDescriptor().feed_id;
+                        int[] skippedEdgesForTransfer = gtfsStorage.getSkippedEdgesForTransfer().get(edge.getId());
+                        if (skippedEdgesForTransfer != null) {
+                            List<Trip.Leg> legs = parsePartitionToLegs(transferPath(skippedEdgesForTransfer, weighting, path.get(i - 1).label.currentTime), graph, encodedValueLookup, weighting, tr, requestedPathDetails);
+                            result.add(legs.get(0));
+                        }
                     }
                 }
             }
@@ -372,7 +388,7 @@ class TripFromLabel {
         } else {
             InstructionList instructions = new InstructionList(tr);
             InstructionsFromEdges instructionsFromEdges = new InstructionsFromEdges(graph,
-                    weighting, weighting.getFlagEncoder(), instructions);
+                    weighting, encodedValueLookup, instructions);
             int prevEdgeId = -1;
             for (int i = 1; i < path.size(); i++) {
                 if (path.get(i).edge.getType() != GtfsStorage.EdgeType.HIGHWAY) {
@@ -390,16 +406,16 @@ class TripFromLabel {
                     pathh.addEdge(transition.edge.getId());
             }
             pathh.setFromNode(path.get(0).label.node.streetNode);
-            pathh.setEndNode(path.get(path.size()-1).label.node.streetNode);
+            pathh.setEndNode(path.get(path.size() - 1).label.node.streetNode);
             pathh.setFound(true);
-            Map<String, List<PathDetail>> pathDetails = PathDetailsFromEdges.calcDetails(pathh, ((GraphHopperStorage) this.graph.getBaseGraph()).getEncodingManager(), weighting, requestedPathDetails, pathDetailsBuilderFactory, 0);
+            Map<String, List<PathDetail>> pathDetails = PathDetailsFromEdges.calcDetails(pathh, encodedValueLookup, weighting, requestedPathDetails, pathDetailsBuilderFactory, 0, graph);
 
             final Instant departureTime = Instant.ofEpochMilli(path.get(0).label.currentTime);
             final Instant arrivalTime = Instant.ofEpochMilli(path.get(path.size() - 1).label.currentTime);
             return Collections.singletonList(new Trip.WalkLeg(
                     "Walk",
                     Date.from(departureTime),
-                    lineStringFromEdges(path),
+                    lineStringFromInstructions(instructions),
                     edges(path).mapToDouble(edgeLabel -> edgeLabel.getDistance()).sum(),
                     instructions,
                     pathDetails,
@@ -407,28 +423,21 @@ class TripFromLabel {
         }
     }
 
+    public List<Label.Transition> transferPath(int[] skippedEdgesForTransfer, Weighting transferWeighting, long currentTime) {
+        GraphExplorer graphExplorer = new GraphExplorer(graph, gtfsStorage.getPtGraph(), transferWeighting, gtfsStorage, realtimeFeed, false, true, false, walkSpeedKmH, false, 0);
+        return graphExplorer.walkPath(skippedEdgesForTransfer, currentTime);
+    }
+
     private Stream<GraphExplorer.MultiModalEdge> edges(List<Label.Transition> path) {
         return path.stream().filter(t -> t.edge != null).map(t -> t.edge);
     }
 
-    private Geometry lineStringFromEdges(List<Label.Transition> transitions) {
-        final Iterator<Label.Transition> iterator = transitions.iterator();
-        iterator.next();
-        Label.Transition first = iterator.next();
-        List<Coordinate> coordinates = new ArrayList<>(toCoordinateArray(graph.getEdgeIteratorState(first.edge.getId(), first.edge.getAdjNode().streetNode).fetchWayGeometry(FetchMode.ALL)));
-        iterator.forEachRemaining(transition -> coordinates.addAll(toCoordinateArray(graph.getEdgeIteratorState(transition.edge.getId(), transition.edge.getAdjNode().streetNode).fetchWayGeometry(FetchMode.PILLAR_AND_ADJ))));
-        return geometryFactory.createLineString(coordinates.toArray(new Coordinate[coordinates.size()]));
-    }
-
-    private static List<Coordinate> toCoordinateArray(PointList pointList) {
-        List<Coordinate> coordinates = new ArrayList<>(pointList.size());
-        for (int i = 0; i < pointList.size(); i++) {
-            coordinates.add(pointList.getDimension() == 3 ?
-                    new Coordinate(pointList.getLon(i), pointList.getLat(i)) :
-                    new Coordinate(pointList.getLon(i), pointList.getLat(i), pointList.getEle(i)));
+    private Geometry lineStringFromInstructions(InstructionList instructions) {
+        final PointList pointsList = new PointList();
+        for (Instruction instruction : instructions) {
+            pointsList.add(instruction.getPoints());
         }
-        return coordinates;
+        return pointsList.toLineString(false);
     }
-
 
 }

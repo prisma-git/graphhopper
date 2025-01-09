@@ -26,37 +26,43 @@ import com.graphhopper.util.PMap;
 import at.prismasolutions.graphhopper.extension.GHEventMapper;
 
 /**
- * Specifies how the best route is calculated. E.g. the fastest or shortest route.
- * <p>
+ * Specifies how the best route is calculated.
  *
  * @author Peter Karich
  */
 public interface Weighting {
-    int INFINITE_U_TURN_COSTS = -1;
 
     /**
      * Used only for the heuristic estimation in A*
      *
-     * @return minimal weight for the specified distance in meter. E.g. if you calculate the fastest
-     * way the return value is 'distance/max_velocity'
+     * @return minimal weight per meter. E.g. if you calculate the fastest way the
+     *         return value
+     *         is '1/max_velocity' or a shortest weighting would return 1.
      */
-    double getMinWeight(double distance);
+    double calcMinWeightPerDistance();
 
     /**
-     * This method calculates the weight of a given {@link EdgeIteratorState}. E.g. a high value indicates that the edge
-     * should be avoided during shortest path search. Make sure that this method is very fast and optimized as this is
-     * called potentially millions of times for one route or a lot more for nearly any preprocessing phase.
+     * This method calculates the weight of a given {@link EdgeIteratorState}. E.g.
+     * a high value indicates that the edge
+     * should be avoided during shortest path search. Make sure that this method is
+     * very fast and optimized as this is
+     * called potentially millions of times for one route or a lot more for nearly
+     * any preprocessing phase.
      *
      * @param edgeState the edge for which the weight should be calculated
-     * @param reverse   if the specified edge is specified in reverse direction e.g. from the reverse
+     * @param reverse   if the specified edge is specified in reverse direction e.g.
+     *                  from the reverse
      *                  case of a bidirectional search.
-     * @return the calculated weight with the specified velocity has to be in the range of 0 and
-     * +Infinity. Make sure your method does not return NaN which can e.g. occur for 0/0.
+     * @return the calculated weight with the specified velocity has to be in the
+     *         range of 0 and
+     *         +Infinity. Make sure your method does not return NaN which can e.g.
+     *         occur for 0/0.
      */
     double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse);
 
     /**
-     * This method calculates the time taken (in milli seconds) to travel along the specified edgeState.
+     * This method calculates the time taken (in milliseconds) to travel along the
+     * specified edgeState.
      * It is typically used for post-processing and on only a few thousand edges.
      */
     long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse);
@@ -66,13 +72,13 @@ public interface Weighting {
     long calcTurnMillis(int inEdge, int viaNode, int outEdge);
 
     /**
-     * This method can be used to check whether or not this weighting returns turn costs (or if they are all zero).
-     * This is sometimes needed to do safety checks as not all graph algorithms can be run edge-based and might yield
+     * This method can be used to check whether or not this weighting returns turn
+     * costs (or if they are all zero).
+     * This is sometimes needed to do safety checks as not all graph algorithms can
+     * be run edge-based and might yield
      * wrong results when turn costs are applied while running node-based.
      */
     boolean hasTurnCosts();
-
-    FlagEncoder getFlagEncoder();
 
     String getName();
 
@@ -83,13 +89,16 @@ public interface Weighting {
         }
         return calcEdgeWeight(edgeState, reverse);
     }
-    
-   
-    
-    //Extension	
+
+    // Extension
     void setHints(PMap hints);
+
     void setGHEventMapper(GHEventMapper mapper);
 
+    static boolean isValidName(String name) {
+        if (name == null || name.isEmpty())
+            return false;
 
-
+        return name.matches("[\\|_a-z]+");
+    }
 }

@@ -19,53 +19,68 @@
 package com.graphhopper.routing;
 
 import com.graphhopper.config.Profile;
+import com.graphhopper.routing.ev.BooleanEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.Orientation;
+import com.graphhopper.routing.ev.TurnRestriction;
 import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.util.FlagEncoder;
-import com.graphhopper.routing.weighting.*;
+import com.graphhopper.routing.weighting.DefaultTurnCostProvider;
+import com.graphhopper.routing.weighting.TurnCostProvider;
+import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.routing.weighting.custom.CustomModelParser;
-import com.graphhopper.routing.weighting.custom.CustomProfile;
 import com.graphhopper.routing.weighting.custom.CustomWeighting;
-import com.graphhopper.storage.GraphHopperStorage;
+import com.graphhopper.storage.BaseGraph;
 import com.graphhopper.util.CustomModel;
 import com.graphhopper.util.PMap;
 import com.graphhopper.util.Parameters;
+import com.graphhopper.util.TurnCostsConfig;
 
 import at.prismasolutions.graphhopper.extension.GHEventManager;
 
 import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
-import static com.graphhopper.routing.weighting.Weighting.INFINITE_U_TURN_COSTS;
 import static com.graphhopper.util.Helper.toLowerCase;
 
 public class DefaultWeightingFactory implements WeightingFactory {
-    private final GraphHopperStorage ghStorage;
-    private final EncodingManager encodingManager;
-  //Extension
-    private GHEventManager manager;
-  //Extension
 
-    public DefaultWeightingFactory(GraphHopperStorage ghStorage, EncodingManager encodingManager) {
-        this.ghStorage = ghStorage;
+    private final BaseGraph graph;
+    private final EncodingManager encodingManager;
+    // Extension
+    private GHEventManager manager;
+    // Extension
+
+    public DefaultWeightingFactory(BaseGraph graph, EncodingManager encodingManager) {
+        this.graph = graph;
         this.encodingManager = encodingManager;
     }
 
     @Override
     public Weighting createWeighting(Profile profile, PMap requestHints, boolean disableTurnCosts) {
         // Merge profile hints with request hints, the request hints take precedence.
-        // Note that so far we do not check if overwriting the profile hints actually works with the preparation
-        // for LM/CH. Later we should also limit the number of parameters that can be used to modify the profile.
-        // todo: since we are not dealing with block_area here yet we cannot really apply any merging rules
-        // for it, see discussion here: https://github.com/graphhopper/graphhopper/pull/1958#discussion_r395462901
+        // Note that so far we do not check if overwriting the profile hints actually
+        // works with the preparation
+        // for LM/CH. Later we should also limit the number of parameters that can be
+        // used to modify the profile.
         PMap hints = new PMap();
         hints.putAll(profile.getHints());
         hints.putAll(requestHints);
 
-        FlagEncoder encoder = encodingManager.getEncoder(profile.getVehicle());
         TurnCostProvider turnCostProvider;
-        if (profile.isTurnCosts() && !disableTurnCosts) {
-            if (!encoder.supportsTurnCosts())
-                throw new IllegalArgumentException("Encoder " + encoder + " does not support turn costs");
-            int uTurnCosts = hints.getInt(Parameters.Routing.U_TURN_COSTS, INFINITE_U_TURN_COSTS);
-            turnCostProvider = new DefaultTurnCostProvider(encoder, ghStorage.getTurnCostStorage(), uTurnCosts);
+        if (profile.hasTurnCosts() && !disableTurnCosts) {
+            BooleanEncodedValue turnRestrictionEnc = encodingManager
+                    .getTurnBooleanEncodedValue(TurnRestriction.key(profile.getName()));
+            if (turnRestrictionEnc == null)
+                throw new IllegalArgumentException(
+                        "Cannot find turn restriction encoded value for " + profile.getName());
+            DecimalEncodedValue oEnc = encodingManager.hasEncodedValue(Orientation.KEY)
+                    ? encodingManager.getDecimalEncodedValue(Orientation.KEY)
+                    : null;
+            if (profile.getTurnCostsConfig().hasLeftRightStraightCosts() && oEnc == null)
+                throw new IllegalArgumentException(
+                        "Using left_turn_costs,sharp_left_turn_costs,right_turn_costs,sharp_right_turn_costs or straight_costs for turn_costs requires 'orientation' in graph.encoded_values");
+            int uTurnCosts = hints.getInt(Parameters.Routing.U_TURN_COSTS,
+                    profile.getTurnCostsConfig().getUTurnCosts());
+            TurnCostsConfig tcConfig = new TurnCostsConfig(profile.getTurnCostsConfig()).setUTurnCosts(uTurnCosts);
+            turnCostProvider = new DefaultTurnCostProvider(turnRestrictionEnc, oEnc, graph, tcConfig);
         } else {
             turnCostProvider = NO_TURN_COST_PROVIDER;
         }
@@ -76,47 +91,51 @@ public class DefaultWeightingFactory implements WeightingFactory {
 
         Weighting weighting = null;
         if (CustomWeighting.NAME.equalsIgnoreCase(weightingStr)) {
-            if (!(profile instanceof CustomProfile))
-                throw new IllegalArgumentException("custom weighting requires a CustomProfile but was profile=" + profile.getName());
-            CustomModel queryCustomModel = requestHints.getObject(CustomModel.KEY, null);
-            CustomProfile customProfile = (CustomProfile) profile;
-            if (queryCustomModel != null)
-                queryCustomModel.checkLMConstraints(customProfile.getCustomModel());
+            final CustomModel queryCustomModel = requestHints.getObject(CustomModel.KEY, null);
+            final CustomModel mergedCustomModel = CustomModel.merge(profile.getCustomModel(), queryCustomModel);
+            if (requestHints.has(Parameters.Routing.HEADING_PENALTY))
+                mergedCustomModel.setHeadingPenalty(requestHints.getDouble(Parameters.Routing.HEADING_PENALTY,
+                        Parameters.Routing.DEFAULT_HEADING_PENALTY));
+            if (hints.has("cm_version")) {
+                if (!hints.getString("cm_version", "").equals("2"))
+                    throw new IllegalArgumentException("cm_version: \"2\" is required");
+                weighting = CustomModelParser.createWeighting2(encodingManager, turnCostProvider, mergedCustomModel);
+            } else
+                weighting = CustomModelParser.createWeighting(encodingManager, turnCostProvider, mergedCustomModel);
 
-            queryCustomModel = CustomModel.merge(customProfile.getCustomModel(), queryCustomModel);
-            weighting = CustomModelParser.createWeighting(encoder, encodingManager, turnCostProvider, queryCustomModel);
         } else if ("shortest".equalsIgnoreCase(weightingStr)) {
-            weighting = new ShortestWeighting(encoder, turnCostProvider);
+            throw new IllegalArgumentException(
+                    "Instead of weighting=shortest use weighting=custom with a high distance_influence");
         } else if ("fastest".equalsIgnoreCase(weightingStr)) {
-            if (encoder.supports(PriorityWeighting.class))
-                weighting = new PriorityWeighting(encoder, hints, turnCostProvider);
-            else
-                weighting = new FastestWeighting(encoder, hints, turnCostProvider);
+            throw new IllegalArgumentException(
+                    "Instead of weighting=fastest use weighting=custom with a custom model that avoids road_access == DESTINATION");
         } else if ("curvature".equalsIgnoreCase(weightingStr)) {
-            if (encoder.supports(CurvatureWeighting.class))
-                weighting = new CurvatureWeighting(encoder, hints, turnCostProvider);
-
+            throw new IllegalArgumentException(
+                    "The curvature weighting is no longer supported since 7.0. Use a custom " +
+                            "model with the EncodedValue 'curvature' instead");
         } else if ("short_fastest".equalsIgnoreCase(weightingStr)) {
-            weighting = new ShortFastestWeighting(encoder, hints, turnCostProvider);
+            throw new IllegalArgumentException(
+                    "Instead of weighting=short_fastest use weighting=custom with a distance_influence");
         }
 
         if (weighting == null)
             throw new IllegalArgumentException("Weighting '" + weightingStr + "' not supported");
-      //Extension
+        // Extension
         weighting.setHints(hints);
-        if(this.manager != null) {
-        	weighting.setGHEventMapper(manager.getMapper());
+        if (this.manager != null) {
+            weighting.setGHEventMapper(manager.getMapper());
         }
-      //Extension
+        // Extension
         return weighting;
     }
-  //Extension
-	public GHEventManager getManager() {
-		return manager;
-	}
 
-	public void setManager(GHEventManager manager) {
-		this.manager = manager;
-	}
-	//Extension
+    // Extension
+    public GHEventManager getManager() {
+        return manager;
+    }
+
+    public void setManager(GHEventManager manager) {
+        this.manager = manager;
+    }
+    // Extension
 }

@@ -17,7 +17,6 @@
  */
 package com.graphhopper.routing.weighting;
 
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIteratorState;
 
 import at.prismasolutions.graphhopper.extension.ExtendedWeighting;
@@ -37,8 +36,8 @@ public abstract class AbstractAdjustedWeighting extends ExtendedWeighting {
     }
 
     @Override
-    public double getMinWeight(double distance) {
-        return superWeighting.getMinWeight(distance);
+    public double calcMinWeightPerDistance() {
+        return superWeighting.calcMinWeightPerDistance();
     }
 
     @Override
@@ -64,14 +63,6 @@ public abstract class AbstractAdjustedWeighting extends ExtendedWeighting {
     @Override
     public boolean hasTurnCosts() {
         return superWeighting.hasTurnCosts();
-    }
-
-    /**
-     * Returns the flagEncoder of the superWeighting. Usually we do not have a FlagEncoder here.
-     */
-    @Override
-    public FlagEncoder getFlagEncoder() {
-        return superWeighting.getFlagEncoder();
     }
 
     @Override

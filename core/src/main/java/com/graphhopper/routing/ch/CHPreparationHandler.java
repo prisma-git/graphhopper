@@ -19,10 +19,7 @@ package com.graphhopper.routing.ch;
 
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.config.CHProfile;
-import com.graphhopper.storage.CHConfig;
-import com.graphhopper.storage.CHStorage;
-import com.graphhopper.storage.GraphHopperStorage;
-import com.graphhopper.storage.RoutingCHGraph;
+import com.graphhopper.storage.*;
 import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.PMap;
 import com.graphhopper.util.Parameters.CH;
@@ -30,8 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.graphhopper.util.Helper.createFormatter;
 import static com.graphhopper.util.Helper.getMemInfo;
@@ -99,60 +95,56 @@ public class CHPreparationHandler {
         this.preparationThreads = preparationThreads;
     }
 
-    public Map<String, RoutingCHGraph> load(GraphHopperStorage ghStorage, List<CHConfig> chConfigs) {
+    public Map<String, RoutingCHGraph> load(BaseGraph graph, List<CHConfig> chConfigs) {
         Map<String, RoutingCHGraph> loaded = Collections.synchronizedMap(new LinkedHashMap<>());
-        List<Callable<String>> callables = chConfigs.stream()
-                .map(c -> (Callable<String>) () -> {
-                    CHStorage chStorage = ghStorage.loadCHStorage(c.getName(), c.isEdgeBased());
-                    if (chStorage != null)
-                        loaded.put(c.getName(), ghStorage.createCHGraph(chStorage, c));
+        Stream<Runnable> runnables = chConfigs.stream()
+                .map(c -> () -> {
+                    CHStorage chStorage = new CHStorage(graph.getDirectory(), c.getName(), graph.getSegmentSize(), c.isEdgeBased());
+                    if (chStorage.loadExisting())
+                        loaded.put(c.getName(), RoutingCHGraphImpl.fromGraph(graph, chStorage, c));
                     else {
                         // todo: this is ugly, see comments in LMPreparationHandler
-                        ghStorage.getDirectory().remove("nodes_ch_" + c.getName());
-                        ghStorage.getDirectory().remove("shortcuts_" + c.getName());
+                        graph.getDirectory().remove("nodes_ch_" + c.getName());
+                        graph.getDirectory().remove("shortcuts_" + c.getName());
                     }
-                    return c.getName();
-                })
-                .collect(Collectors.toList());
-        GHUtility.runConcurrently(callables, preparationThreads);
+                });
+        GHUtility.runConcurrently(runnables, preparationThreads);
         return loaded;
     }
 
-    public Map<String, PrepareContractionHierarchies.Result> prepare(GraphHopperStorage ghStorage, List<CHConfig> chConfigs, final boolean closeEarly) {
+    public Map<String, PrepareContractionHierarchies.Result> prepare(BaseGraph baseGraph, StorableProperties properties, List<CHConfig> chConfigs, final boolean closeEarly) {
         if (chConfigs.isEmpty()) {
             LOGGER.info("There are no CHs to prepare");
             return Collections.emptyMap();
         }
         LOGGER.info("Creating CH preparations, {}", getMemInfo());
-        List<PrepareContractionHierarchies> preparations = chConfigs.stream()
-                .map(c -> createCHPreparation(ghStorage, c))
-                .collect(Collectors.toList());
         Map<String, PrepareContractionHierarchies.Result> results = Collections.synchronizedMap(new LinkedHashMap<>());
-        List<Callable<String>> callables = new ArrayList<>(preparations.size());
-        for (int i = 0; i < preparations.size(); ++i) {
-            PrepareContractionHierarchies prepare = preparations.get(i);
-            LOGGER.info((i + 1) + "/" + preparations.size() + " calling " +
-                    "CH prepare.doWork for profile '" + prepare.getCHConfig().getName() + "' " + prepare.getCHConfig().getTraversalMode() + " ... (" + getMemInfo() + ")");
-            callables.add(() -> {
-                final String name = prepare.getCHConfig().getName();
+        List<Runnable> runnables = new ArrayList<>(chConfigs.size());
+        for (int i = 0; i < chConfigs.size(); ++i) {
+            CHConfig chConfig = chConfigs.get(i);
+            LOGGER.info((i + 1) + "/" + chConfigs.size() + " Setting up CH preparation for profile " +
+                    "'" + chConfig.getName() + "' " + chConfig.getTraversalMode() + " ... (" + getMemInfo() + ")");
+            runnables.add(() -> {
+                final String name = chConfig.getName();
                 // toString is not taken into account so we need to cheat, see http://stackoverflow.com/q/6113746/194609 for other options
                 Thread.currentThread().setName(name);
+                PrepareContractionHierarchies prepare = PrepareContractionHierarchies.fromGraph(baseGraph, chConfig);
+                prepare.setParams(pMap);
                 PrepareContractionHierarchies.Result result = prepare.doWork();
                 results.put(name, result);
                 prepare.flush();
                 if (closeEarly)
                     prepare.close();
-                ghStorage.getProperties().put(CH.PREPARE + "date." + name, createFormatter().format(new Date()));
-                return name;
+                properties.put(CH.PREPARE + "date." + name, createFormatter().format(new Date()));
             });
         }
-        GHUtility.runConcurrently(callables, preparationThreads);
+        GHUtility.runConcurrently(runnables.stream(), preparationThreads);
         LOGGER.info("Finished CH preparation, {}", getMemInfo());
         return results;
     }
 
-    private PrepareContractionHierarchies createCHPreparation(GraphHopperStorage ghStorage, CHConfig chConfig) {
-        PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraphHopperStorage(ghStorage, chConfig);
+    private PrepareContractionHierarchies createCHPreparation(BaseGraph graph, CHConfig chConfig) {
+        PrepareContractionHierarchies pch = PrepareContractionHierarchies.fromGraph(graph, chConfig);
         pch.setParams(pMap);
         return pch;
     }

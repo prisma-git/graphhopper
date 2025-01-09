@@ -17,50 +17,70 @@
  */
 package com.graphhopper.json;
 
-public class Statement {
-    private final Keyword keyword;
-    private final String condition;
-    private final Op operation;
-    private final double value;
+import com.graphhopper.util.Helper;
 
-    private Statement(Keyword keyword, String condition, Op operation, double value) {
-        this.keyword = keyword;
-        this.condition = condition;
-        this.value = value;
-        this.operation = operation;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+public record Statement(Keyword keyword, String condition, Op operation, String value,
+                        List<Statement> doBlock) {
+
+    public Statement {
+        if (condition == null)
+            throw new IllegalArgumentException("'condition' cannot be null");
+        if (doBlock != null && operation != Op.DO)
+            throw new IllegalArgumentException("For 'doBlock' you have to use Op.DO");
+        if (doBlock != null && value != null)
+            throw new IllegalArgumentException("'doBlock' or 'value' cannot be both non-null");
+        if (doBlock == null && Helper.isEmpty(value))
+            throw new IllegalArgumentException("a leaf statement must have a non-empty 'value'");
+        if (condition.isEmpty() && keyword != Keyword.ELSE)
+            throw new IllegalArgumentException("All statements (except 'else') have to use a non-empty 'condition'");
+        if (!condition.isEmpty() && keyword == Keyword.ELSE)
+            throw new IllegalArgumentException("For the 'else' statement you have to use an empty 'condition'");
     }
 
-    public Keyword getKeyword() {
-        return keyword;
+    public boolean isBlock() {
+        return doBlock != null;
     }
 
-    public String getCondition() {
-        return condition;
-    }
-
-    public Op getOperation() {
-        return operation;
-    }
-
-    public double getValue() {
+    @Override
+    public String value() {
+        if (isBlock())
+            throw new UnsupportedOperationException("'value' is not supported for block statement.");
         return value;
     }
 
-    public double apply(double externValue) {
-        switch (operation) {
-            case MULTIPLY:
-                return value * externValue;
-            case LIMIT:
-                return Math.min(value, externValue);
-            default:
-                throw new IllegalArgumentException();
-        }
+    @Override
+    public List<Statement> doBlock() {
+        if (!isBlock())
+            throw new UnsupportedOperationException("'doBlock' is not supported for leaf statement.");
+        return doBlock;
+    }
+
+    public String toPrettyString() {
+        if (isBlock())
+            return "{\"" + keyword.getName() + "\": \"" + condition + "\",\n"
+                    + "  \"do\": [\n"
+                    + doBlock.stream().map(Objects::toString).collect(Collectors.joining(",\n  "))
+                    + "  ]\n" +
+                    "}";
+        else return toString();
+    }
+
+    @Override
+    public String toString() {
+        if (isBlock())
+            return "{\"" + keyword.getName() + "\": \"" + condition + "\", \"do\": " + doBlock + " }";
+        else
+            return "{\"" + keyword.getName() + "\": \"" + condition + "\", \"" + operation.getName() + ": \"" + value + "\"}";
     }
 
     public enum Keyword {
         IF("if"), ELSEIF("else_if"), ELSE("else");
 
-        String name;
+        private final String name;
 
         Keyword(String name) {
             this.name = name;
@@ -72,9 +92,9 @@ public class Statement {
     }
 
     public enum Op {
-        MULTIPLY("multiply_by"), LIMIT("limit_to");
+        MULTIPLY("multiply_by"), LIMIT("limit_to"), DO("do");
 
-        String name;
+        private final String name;
 
         Op(String name) {
             this.name = name;
@@ -84,7 +104,7 @@ public class Statement {
             return name;
         }
 
-        public String build(double value) {
+        public String build(String value) {
             switch (this) {
                 case MULTIPLY:
                     return "value *= " + value;
@@ -94,26 +114,40 @@ public class Statement {
                     throw new IllegalArgumentException();
             }
         }
+
+        public MinMax apply(MinMax minMax1, MinMax minMax2) {
+            switch (this) {
+                case MULTIPLY:
+                    return new MinMax(minMax1.min * minMax2.min, minMax1.max * minMax2.max);
+                case LIMIT:
+                    return new MinMax(Math.min(minMax1.min, minMax2.min), Math.min(minMax1.max, minMax2.max));
+                default:
+                    throw new IllegalArgumentException();
+            }
+        }
     }
 
-    @Override
-    public String toString() {
-        return "{" + str(keyword.getName()) + ": " + str(condition) + ", " + str(operation.getName()) + ": " + value + "}";
+    public static Statement If(String expression, List<Statement> doBlock) {
+        return new Statement(Keyword.IF, expression, Op.DO, null, doBlock);
     }
 
-    private String str(String str) {
-        return "\"" + str + "\"";
+    public static Statement If(String expression, Op op, String value) {
+        return new Statement(Keyword.IF, expression, op, value, null);
     }
 
-    public static Statement If(String expression, Op op, double value) {
-        return new Statement(Keyword.IF, expression, op, value);
+    public static Statement ElseIf(String expression, List<Statement> doBlock) {
+        return new Statement(Keyword.ELSEIF, expression, Op.DO, null, doBlock);
     }
 
-    public static Statement ElseIf(String expression, Op op, double value) {
-        return new Statement(Keyword.ELSEIF, expression, op, value);
+    public static Statement ElseIf(String expression, Op op, String value) {
+        return new Statement(Keyword.ELSEIF, expression, op, value, null);
     }
 
-    public static Statement Else(Op op, double value) {
-        return new Statement(Keyword.ELSE, null, op, value);
+    public static Statement Else(List<Statement> doBlock) {
+        return new Statement(Keyword.ELSE, "", Op.DO, null, doBlock);
+    }
+
+    public static Statement Else(Op op, String value) {
+        return new Statement(Keyword.ELSE, "", op, value, null);
     }
 }

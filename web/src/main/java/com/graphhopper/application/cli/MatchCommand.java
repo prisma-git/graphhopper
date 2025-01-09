@@ -29,8 +29,8 @@ import com.graphhopper.matching.MapMatching;
 import com.graphhopper.matching.MatchResult;
 import com.graphhopper.matching.Observation;
 import com.graphhopper.util.*;
-import io.dropwizard.cli.ConfiguredCommand;
-import io.dropwizard.setup.Bootstrap;
+import io.dropwizard.core.cli.ConfiguredCommand;
+import io.dropwizard.core.setup.Bootstrap;
 import net.sourceforge.argparse4j.inf.Argument;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
@@ -96,7 +96,7 @@ public class MatchCommand extends ConfiguredCommand<GraphHopperServerConfigurati
 
         PMap hints = new PMap();
         hints.putObject("profile", args.get("profile"));
-        MapMatching mapMatching = new MapMatching(hopper, hints);
+        MapMatching mapMatching = MapMatching.fromGraphHopper(hopper, hints);
         mapMatching.setTransitionProbabilityBeta(args.getDouble("transition_probability_beta"));
         mapMatching.setMeasurementErrorSigma(args.getInt("gps_accuracy"));
 

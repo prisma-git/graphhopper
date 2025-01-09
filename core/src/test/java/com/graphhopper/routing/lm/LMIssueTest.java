@@ -19,14 +19,15 @@
 package com.graphhopper.routing.lm;
 
 import com.graphhopper.routing.*;
-import com.graphhopper.routing.ev.DecimalEncodedValue;
-import com.graphhopper.routing.ev.Subnetwork;
-import com.graphhopper.routing.util.CarFlagEncoder;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.util.FlagEncoder;
-import com.graphhopper.routing.weighting.FastestWeighting;
+import com.graphhopper.routing.weighting.SpeedWeighting;
 import com.graphhopper.routing.weighting.Weighting;
-import com.graphhopper.storage.*;
+import com.graphhopper.routing.weighting.custom.CustomModelParser;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.storage.Directory;
+import com.graphhopper.storage.NodeAccess;
+import com.graphhopper.storage.RAMDirectory;
 import com.graphhopper.util.GHUtility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -39,10 +40,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class LMIssueTest {
     private Directory dir;
-    private GraphHopperStorage graph;
-    private FlagEncoder encoder;
+    private BaseGraph graph;
+    private DecimalEncodedValue speedEnc;
     private Weighting weighting;
     private LandmarkStorage lm;
+    private EncodingManager encodingManager;
 
     private enum Algo {
         DIJKSTRA,
@@ -56,17 +58,19 @@ public class LMIssueTest {
     @BeforeEach
     public void init() {
         dir = new RAMDirectory();
-        encoder = new CarFlagEncoder(5, 5, 1);
-        EncodingManager encodingManager = new EncodingManager.Builder().add(encoder).add(Subnetwork.create("car")).build();
-        graph = new GraphBuilder(encodingManager)
+        speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, true);
+        DecimalEncodedValue turnCostEnc = TurnCost.create("car", 1);
+        encodingManager = new EncodingManager.Builder().add(speedEnc).addTurnCostEncodedValue(turnCostEnc).add(Subnetwork.create("car")).build();
+        graph = new BaseGraph.Builder(encodingManager)
+                .withTurnCosts(true)
                 .setDir(dir)
                 .create();
-        weighting = new FastestWeighting(encoder);
+        weighting = new SpeedWeighting(speedEnc);
     }
 
     private void preProcessGraph() {
         graph.freeze();
-        PrepareLandmarks prepare = new PrepareLandmarks(dir, graph, new LMConfig("car", weighting), 16);
+        PrepareLandmarks prepare = new PrepareLandmarks(dir, graph, encodingManager, new LMConfig("car", weighting), 16);
         prepare.setMaximumWeight(10000);
         prepare.doWork();
         lm = prepare.getLandmarkStorage();
@@ -110,7 +114,6 @@ public class LMIssueTest {
         //     \ | |
         //       3 |
         // 2 --<----
-        DecimalEncodedValue speedEnc = encoder.getAverageSpeedEnc();
         NodeAccess na = graph.getNodeAccess();
         na.setNode(0, 49.405150, 9.709054);
         na.setNode(1, 49.403705, 9.700517);
@@ -118,13 +121,13 @@ public class LMIssueTest {
         na.setNode(3, 49.403009, 9.708364);
         na.setNode(4, 49.409021, 9.703622);
         // 30s
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(4, 3).setDistance(1000)).set(speedEnc, 120);
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(0, 2).setDistance(1000)).set(speedEnc, 120);
+        graph.edge(4, 3).setDistance(1000).set(speedEnc, 120, 120);
+        graph.edge(0, 2).setDistance(1000).set(speedEnc, 120, 0);
         // 360s
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 3).setDistance(1000)).set(speedEnc, 10);
+        graph.edge(1, 3).setDistance(1000).set(speedEnc, 10, 60);
         // 80s
-        GHUtility.setSpeed(60, true, false, encoder, graph.edge(0, 1).setDistance(1000)).set(speedEnc, 45);
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 4).setDistance(1000)).set(speedEnc, 45);
+        graph.edge(0, 1).setDistance(1000).set(speedEnc, 45, 0);
+        graph.edge(1, 4).setDistance(1000).set(speedEnc, 45, 60);
         preProcessGraph();
 
         int source = 0;
@@ -149,7 +152,6 @@ public class LMIssueTest {
         //          \     /
         //            ->-
         NodeAccess na = graph.getNodeAccess();
-        DecimalEncodedValue speedEnc = encoder.getAverageSpeedEnc();
         na.setNode(0, 49.406987, 9.709767);
         na.setNode(1, 49.403612, 9.702953);
         na.setNode(2, 49.409755, 9.706517);
@@ -160,13 +162,13 @@ public class LMIssueTest {
         na.setNode(7, 49.406965, 9.702660);
         na.setNode(8, 49.405227, 9.702863);
         na.setNode(9, 49.409411, 9.709085);
-        GHUtility.setSpeed(112, true, true, encoder, graph.edge(0, 1).setDistance(623.197000));
-        GHUtility.setSpeed(13, true, true, encoder, graph.edge(5, 1).setDistance(741.414000));
-        GHUtility.setSpeed(35, true, true, encoder, graph.edge(9, 4).setDistance(1140.835000));
-        GHUtility.setSpeed(18, true, true, encoder, graph.edge(5, 6).setDistance(670.689000));
-        GHUtility.setSpeed(88, true, false, encoder, graph.edge(5, 9).setDistance(80.731000));
-        GHUtility.setSpeed(82, true, true, encoder, graph.edge(0, 9).setDistance(273.948000));
-        GHUtility.setSpeed(60, true, true, encoder, graph.edge(4, 0).setDistance(956.552000));
+        graph.edge(0, 1).setDistance(623.197000).set(speedEnc, 112, 112);
+        graph.edge(5, 1).setDistance(741.414000).set(speedEnc, 13, 13);
+        graph.edge(9, 4).setDistance(1140.835000).set(speedEnc, 35, 35);
+        graph.edge(5, 6).setDistance(670.689000).set(speedEnc, 18, 18);
+        graph.edge(5, 9).setDistance(80.731000).set(speedEnc, 88, 0);
+        graph.edge(0, 9).setDistance(273.948000).set(speedEnc, 82, 82);
+        graph.edge(4, 0).setDistance(956.552000).set(speedEnc, 60, 60);
         preProcessGraph();
 
         int source = 5;

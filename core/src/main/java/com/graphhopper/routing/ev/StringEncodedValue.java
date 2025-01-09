@@ -1,13 +1,9 @@
 package com.graphhopper.routing.ev;
 
-import com.carrotsearch.hppc.ObjectIntHashMap;
-import com.carrotsearch.hppc.ObjectIntMap;
-import com.graphhopper.storage.IntsRef;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * This class holds a List of up to {@link #maxValues} encountered Strings and stores
@@ -19,7 +15,7 @@ import java.util.Objects;
 public final class StringEncodedValue extends IntEncodedValueImpl {
     private final int maxValues;
     private final List<String> values;
-    private final ObjectIntMap<String> indexMap;
+    private final Map<String, Integer> indexMap;
 
     public StringEncodedValue(String name, int expectedValueCount) {
         this(name, expectedValueCount, false);
@@ -30,7 +26,7 @@ public final class StringEncodedValue extends IntEncodedValueImpl {
 
         this.maxValues = roundUp(expectedValueCount);
         this.values = new ArrayList<>(maxValues);
-        this.indexMap = new ObjectIntHashMap<>(maxValues);
+        this.indexMap = new HashMap<>(maxValues);
     }
 
     public StringEncodedValue(String name, int bits, List<String> values, boolean storeTwoDirections) {
@@ -42,19 +38,47 @@ public final class StringEncodedValue extends IntEncodedValueImpl {
                     + values.size() + " > " + maxValues);
 
         this.values = new ArrayList<>(values);
-        this.indexMap = new ObjectIntHashMap<>(values.size());
+        this.indexMap = new HashMap<>(values.size());
         int index = 1;
         for (String value : values) {
             indexMap.put(value, index++);
         }
     }
 
-    public final void setString(boolean reverse, IntsRef ref, String value) {
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    StringEncodedValue(
+            @JsonProperty("name") String name,
+            @JsonProperty("bits") int bits,
+            @JsonProperty("min_storable_value") int minStorableValue,
+            @JsonProperty("max_storable_value") int maxStorableValue,
+            @JsonProperty("max_value") int maxValue,
+            @JsonProperty("negate_reverse_direction") boolean negateReverseDirection,
+            @JsonProperty("store_two_directions") boolean storeTwoDirections,
+            @JsonProperty("fwd_data_index") int fwdDataIndex,
+            @JsonProperty("bwd_data_index") int bwdDataIndex,
+            @JsonProperty("fwd_shift") int fwdShift,
+            @JsonProperty("bwd_shift") int bwdShift,
+            @JsonProperty("fwd_mask") int fwdMask,
+            @JsonProperty("bwd_mask") int bwdMask,
+            @JsonProperty("max_values") int maxValues,
+            @JsonProperty("values") List<String> values,
+            @JsonProperty("index_map") HashMap<String, Integer> indexMap) {
+        // we need this constructor for Jackson
+        super(name, bits, minStorableValue, maxStorableValue, maxValue, negateReverseDirection, storeTwoDirections, fwdDataIndex, bwdDataIndex, fwdShift, bwdShift, fwdMask, bwdMask);
+        if (values.size() > maxValues)
+            throw new IllegalArgumentException("Number of values is higher than the maximum value count: "
+                    + values.size() + " > " + maxValues);
+        this.maxValues = maxValues;
+        this.values = values;
+        this.indexMap = indexMap;
+    }
+
+    public final void setString(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess, String value) {
         if (value == null) {
-            super.setInt(reverse, ref, 0);
+            super.setInt(reverse, edgeId, edgeIntAccess, 0);
             return;
         }
-        int index = indexMap.get(value);
+        int index = indexMap.getOrDefault(value, 0);
         if (index == 0) {
             if (values.size() == maxValues)
                 throw new IllegalStateException("Maximum number of values reached for " + getName() + ": " + maxValues);
@@ -63,11 +87,11 @@ public final class StringEncodedValue extends IntEncodedValueImpl {
             index = values.size();
             indexMap.put(value, index);
         }
-        super.setInt(reverse, ref, index);
+        super.setInt(reverse, edgeId, edgeIntAccess, index);
     }
 
-    public final String getString(boolean reverse, IntsRef ref) {
-        int value = super.getInt(reverse, ref);
+    public final String getString(boolean reverse, int edgeId, EdgeIntAccess edgeIntAccess) {
+        int value = super.getInt(reverse, edgeId, edgeIntAccess);
         if (value == 0) {
             return null;
         }
@@ -87,7 +111,7 @@ public final class StringEncodedValue extends IntEncodedValueImpl {
      * @return the non-zero index of the String or <i>0</i> if it couldn't be found
      */
     public int indexOf(String value) {
-        return indexMap.get(value);
+        return indexMap.getOrDefault(value, 0);
     }
 
     /**
@@ -97,23 +121,4 @@ public final class StringEncodedValue extends IntEncodedValueImpl {
         return Collections.unmodifiableList(values);
     }
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (!(obj instanceof StringEncodedValue)) {
-            return false;
-        }
-        StringEncodedValue other = (StringEncodedValue) obj;
-        if (this.bits != other.bits) {
-            return false;
-        }
-        return Objects.equals(values, other.values);
-    }
-
-    @Override
-    public int getVersion() {
-        return 31 * super.getVersion() + staticHashCode(values);
-    }
 }

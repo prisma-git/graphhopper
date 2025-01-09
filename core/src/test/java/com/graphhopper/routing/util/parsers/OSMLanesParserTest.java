@@ -19,39 +19,41 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.Lanes;
-import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.storage.IntsRef;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class OSMLanesParserTest {
-
+    private final IntEncodedValue lanesEnc = Lanes.create();
     private OSMLanesParser parser;
-    private EncodingManager em;
+    private IntsRef relFlags;
 
     @BeforeEach
     void setup() {
-        parser = new OSMLanesParser();
-        em = new EncodingManager.Builder().add(parser).build();
+        lanesEnc.init(new EncodedValue.InitializerConfig());
+        parser = new OSMLanesParser(lanesEnc);
+        relFlags = new IntsRef(2);
     }
 
     @Test
     void basic() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef intsRef = em.createEdgeFlags();
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
         readerWay.setTag("lanes", "4");
-        parser.handleWayTags(intsRef, readerWay, em.createRelationFlags());
-        Assertions.assertEquals(4, em.getIntEncodedValue(Lanes.KEY).getInt(false, intsRef));
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        Assertions.assertEquals(4, lanesEnc.getInt(false, edgeId, edgeIntAccess));
     }
 
     @Test
     void notTagged() {
         ReaderWay readerWay = new ReaderWay(1);
-        IntsRef intsRef = em.createEdgeFlags();
-        parser.handleWayTags(intsRef, readerWay, em.createRelationFlags());
-        Assertions.assertEquals(1, em.getIntEncodedValue(Lanes.KEY).getInt(false, intsRef));
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        parser.handleWayTags(edgeId, edgeIntAccess, readerWay, relFlags);
+        Assertions.assertEquals(1, lanesEnc.getInt(false, edgeId, edgeIntAccess));
     }
 
 }

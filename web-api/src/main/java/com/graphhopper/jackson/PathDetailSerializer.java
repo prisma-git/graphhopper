@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.graphhopper.util.details.PathDetail;
 
 import java.io.IOException;
+import java.util.Map;
 
 public class PathDetailSerializer extends JsonSerializer<PathDetail> {
 
@@ -46,11 +47,14 @@ public class PathDetailSerializer extends JsonSerializer<PathDetail> {
         else if (value.getValue() instanceof String)
             gen.writeString((String) value.getValue());
         else if (value.getValue() instanceof JsonNode)
-            gen.writeTree((JsonNode)value.getValue());
+            gen.writeTree((JsonNode) value.getValue());
+        else if (value.getValue() instanceof Map)
+            gen.writeObject(value.getValue());
         else if (value.getValue() == null)
             gen.writeNull();
         else
-            throw new JsonGenerationException("Unsupported type for PathDetail.value" + value.getValue().getClass(), gen);
+            throw new JsonGenerationException("Unsupported type for PathDetail.value" + value.getValue().getClass(),
+                    gen);
 
         gen.writeEndArray();
     }

@@ -17,7 +17,10 @@
  */
 package com.graphhopper.navigation;
 
-import com.graphhopper.*;
+import com.graphhopper.GHRequest;
+import com.graphhopper.GHResponse;
+import com.graphhopper.GraphHopper;
+import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.Parameters;
 import com.graphhopper.util.StopWatch;
@@ -36,6 +39,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 import java.util.*;
 
+import static com.graphhopper.util.Parameters.Details.INTERSECTION;
 import static com.graphhopper.util.Parameters.Routing.*;
 
 /**
@@ -158,17 +162,16 @@ public class NavigateResource {
         }
     }
 
-    private GHResponse calcRoute(List<Double> favoredHeadings, List<GHPoint> requestPoints, String profileStr,
+    private GHResponse calcRoute(List<Double> headings, List<GHPoint> requestPoints, String profileStr,
                                  String localeStr, boolean enableInstructions, double minPathPrecision) {
-        GHRequest request;
-        if (favoredHeadings.size() > 0) {
-            request = new GHRequest(requestPoints, favoredHeadings);
-        } else {
-            request = new GHRequest(requestPoints);
-        }
+        GHRequest request = new GHRequest(requestPoints);
+        if (headings.size() > 0)
+            request.setHeadings(headings);
 
         request.setProfile(profileStr).
                 setLocale(localeStr).
+                // We force the intersection details here as we cannot easily add this to the URL
+                setPathDetails(Arrays.asList(INTERSECTION)).
                 putHint(CALC_POINTS, true).
                 putHint(INSTRUCTIONS, enableInstructions).
                 putHint(WAY_POINT_MAX_DISTANCE, minPathPrecision).

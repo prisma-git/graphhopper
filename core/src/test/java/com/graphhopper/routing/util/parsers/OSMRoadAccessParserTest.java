@@ -19,35 +19,36 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RoadAccess;
-import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.routing.util.TransportationMode;
 import com.graphhopper.routing.util.countryrules.CountryRule;
-import com.graphhopper.storage.Graph;
-import com.graphhopper.storage.GraphBuilder;
 import com.graphhopper.storage.IntsRef;
-import com.graphhopper.util.EdgeIteratorState;
-import com.graphhopper.util.GHUtility;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class OSMRoadAccessParserTest {
 
+    private final EnumEncodedValue<RoadAccess> roadAccessEnc = RoadAccess.create();
+    private OSMRoadAccessParser<RoadAccess> parser;
+    private final EnumEncodedValue<BikeRoadAccess> bikeRAEnc = BikeRoadAccess.create();
+    private OSMRoadAccessParser<BikeRoadAccess> bikeRAParser;
+
+    @BeforeEach
+    public void setup() {
+        roadAccessEnc.init(new EncodedValue.InitializerConfig());
+        bikeRAEnc.init(new EncodedValue.InitializerConfig());
+        parser = new OSMRoadAccessParser<>(roadAccessEnc, OSMRoadAccessParser.toOSMRestrictions(TransportationMode.CAR),
+                RoadAccess::countryHook, RoadAccess::find);
+        bikeRAParser = new OSMRoadAccessParser<>(bikeRAEnc, OSMRoadAccessParser.toOSMRestrictions(TransportationMode.BIKE),
+                (ignr, access) -> access, BikeRoadAccess::find);
+    }
+
     @Test
     void countryRule() {
-        EncodingManager em = EncodingManager.create("car");
-        EnumEncodedValue<RoadAccess> roadAccessEnc = em.getEnumEncodedValue(RoadAccess.KEY, RoadAccess.class);
-        Graph graph = new GraphBuilder(em).create();
-        FlagEncoder encoder = em.getEncoder("car");
-        EdgeIteratorState e1 = GHUtility.setSpeed(60, true, true, encoder, graph.edge(0, 1).setDistance(100));
-        EdgeIteratorState e2 = GHUtility.setSpeed(60, true, true, encoder, graph.edge(1, 2).setDistance(100));
-
-        OSMRoadAccessParser parser = new OSMRoadAccessParser(roadAccessEnc, OSMRoadAccessParser.toOSMRestrictions(TransportationMode.CAR));
-        IntsRef relFlags = em.createRelationFlags();
-        ReaderWay way = new ReaderWay(27L);
+        IntsRef relFlags = new IntsRef(2);
+        ReaderWay way = new ReaderWay(1L);
         way.setTag("highway", "track");
         way.setTag("country_rule", new CountryRule() {
             @Override
@@ -55,13 +56,71 @@ class OSMRoadAccessParserTest {
                 return RoadAccess.DESTINATION;
             }
         });
-        parser.handleWayTags(e1.getFlags(), way, relFlags);
-        assertEquals(RoadAccess.DESTINATION, e1.get(roadAccessEnc));
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        parser.handleWayTags(edgeId, edgeIntAccess, way, relFlags);
+        assertEquals(RoadAccess.DESTINATION, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
 
         // if there is no country rule we get the default value
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
         way.removeTag("country_rule");
-        parser.handleWayTags(e2.getFlags(), way, relFlags);
-        assertEquals(RoadAccess.YES, e2.get(roadAccessEnc));
+        parser.handleWayTags(edgeId, edgeIntAccess, way, relFlags);
+        assertEquals(RoadAccess.YES, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
+
+        way.setTag("motor_vehicle", "agricultural;forestry");
+        parser.handleWayTags(edgeId, edgeIntAccess, way, relFlags);
+        assertEquals(RoadAccess.AGRICULTURAL, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
+
+        way.setTag("motor_vehicle", "forestry;agricultural");
+        parser.handleWayTags(edgeId, edgeIntAccess, way, relFlags);
+        assertEquals(RoadAccess.AGRICULTURAL, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
+
+    }
+
+    @Test
+    public void testPermit() {
+        ArrayEdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        ReaderWay way = new ReaderWay(1L);
+        way.setTag("motor_vehicle", "permit");
+        parser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        assertEquals(RoadAccess.PRIVATE, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
+    }
+
+    @Test
+    public void testCar() {
+        ArrayEdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        ReaderWay way = new ReaderWay(1L);
+        way.setTag("access", "private");
+        parser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        assertEquals(RoadAccess.PRIVATE, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
+
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
+        way.setTag("motorcar", "yes");
+        parser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        assertEquals(RoadAccess.YES, roadAccessEnc.getEnum(false, edgeId, edgeIntAccess));
+    }
+
+    @Test
+    public void testBike() {
+        ArrayEdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
+        ReaderWay way = new ReaderWay(1L);
+        way.setTag("access", "private");
+        bikeRAParser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        assertEquals(BikeRoadAccess.PRIVATE, bikeRAEnc.getEnum(false, edgeId, edgeIntAccess));
+
+        way = new ReaderWay(1L);
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
+        way.setTag("vehicle", "private");
+        bikeRAParser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        assertEquals(BikeRoadAccess.PRIVATE, bikeRAEnc.getEnum(false, edgeId, edgeIntAccess));
+
+        edgeIntAccess = new ArrayEdgeIntAccess(1);
+        way.setTag("bicycle", "yes");
+        bikeRAParser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(1));
+        assertEquals(BikeRoadAccess.YES, bikeRAEnc.getEnum(false, edgeId, edgeIntAccess));
     }
 
 }

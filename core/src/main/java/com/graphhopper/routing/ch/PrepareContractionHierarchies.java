@@ -60,7 +60,7 @@ public class PrepareContractionHierarchies {
     private final StopWatch neighborUpdateSW = new StopWatch();
     private final StopWatch contractionSW = new StopWatch();
     private final Params params;
-    private final GraphHopperStorage graph;
+    private final BaseGraph graph;
     private NodeContractor nodeContractor;
     private final int nodes;
     private NodeOrderingProvider nodeOrderingProvider;
@@ -71,21 +71,21 @@ public class PrepareContractionHierarchies {
     private int checkCounter;
     private boolean prepared = false;
 
-    public static PrepareContractionHierarchies fromGraphHopperStorage(GraphHopperStorage ghStorage, CHConfig chConfig) {
-        return new PrepareContractionHierarchies(ghStorage, chConfig);
+    public static PrepareContractionHierarchies fromGraph(BaseGraph graph, CHConfig chConfig) {
+        return new PrepareContractionHierarchies(graph.getBaseGraph(), chConfig);
     }
 
-    private PrepareContractionHierarchies(GraphHopperStorage ghStorage, CHConfig chConfig) {
-        graph = ghStorage;
+    private PrepareContractionHierarchies(BaseGraph graph, CHConfig chConfig) {
         if (!graph.isFrozen())
             throw new IllegalStateException("BaseGraph must be frozen before creating CHs");
-        chStore = ghStorage.createCHStorage(chConfig);
+        this.graph = graph;
+        chStore = CHStorage.fromGraph(graph, chConfig);
         chBuilder = new CHStorageBuilder(chStore);
         this.chConfig = chConfig;
         params = Params.forTraversalMode(chConfig.getTraversalMode());
-        nodes = ghStorage.getNodes();
+        nodes = graph.getNodes();
         if (chConfig.getTraversalMode().isEdgeBased()) {
-            TurnCostStorage turnCostStorage = ghStorage.getTurnCostStorage();
+            TurnCostStorage turnCostStorage = graph.getTurnCostStorage();
             if (turnCostStorage == null) {
                 throw new IllegalArgumentException("For edge-based CH you need a turn cost storage");
             }
@@ -97,6 +97,7 @@ public class PrepareContractionHierarchies {
         params.setPeriodicUpdatesPercentage(pMap.getInt(PERIODIC_UPDATES, params.getPeriodicUpdatesPercentage()));
         params.setLastNodesLazyUpdatePercentage(pMap.getInt(LAST_LAZY_NODES_UPDATES, params.getLastNodesLazyUpdatePercentage()));
         params.setNeighborUpdatePercentage(pMap.getInt(NEIGHBOR_UPDATES, params.getNeighborUpdatePercentage()));
+        params.setMaxNeighborUpdates(pMap.getInt(NEIGHBOR_UPDATES_MAX, params.getMaxNeighborUpdates()));
         params.setNodesContractedPercentage(pMap.getInt(CONTRACTED_NODES, params.getNodesContractedPercentage()));
         params.setLogMessagesPercentage(pMap.getInt(LOG_MESSAGES, params.getLogMessagesPercentage()));
         return this;
@@ -122,7 +123,7 @@ public class PrepareContractionHierarchies {
             throw new IllegalStateException("Call doWork only once!");
         prepared = true;
         if (!graph.isFrozen()) {
-            throw new IllegalStateException("Given GraphHopperStorage has not been frozen yet");
+            throw new IllegalStateException("Given BaseGraph has not been frozen yet");
         }
         if (chStore.getShortcuts() > 0) {
             throw new IllegalStateException("Given CHStore already contains shortcuts");
@@ -134,7 +135,6 @@ public class PrepareContractionHierarchies {
         logFinalGraphStats();
         return new Result(
                 chConfig, chStore,
-                nodeContractor.getDijkstraCount(),
                 nodeContractor.getAddedShortcutsCount(),
                 lazyUpdateSW.getCurrentSeconds(),
                 periodicUpdateSW.getCurrentSeconds(),
@@ -169,22 +169,16 @@ public class PrepareContractionHierarchies {
     }
 
     private void initFromGraph() {
-        // todo: this whole chain of initFromGraph() methods is just needed because PrepareContractionHierarchies does
-        // not simply prepare contraction hierarchies, but instead it also serves as some kind of 'container' to give
-        // access to the preparations in the GraphHopper class. If this was not so we could make this a lot cleaner here,
-        // declare variables final and would not need all these close() methods...
+        logger.info("Creating CH prepare graph, {}", getMemInfo());
         CHPreparationGraph prepareGraph;
         if (chConfig.getTraversalMode().isEdgeBased()) {
             TurnCostStorage turnCostStorage = graph.getTurnCostStorage();
-            if (turnCostStorage == null) {
+            if (turnCostStorage == null)
                 throw new IllegalArgumentException("For edge-based CH you need a turn cost storage");
-            }
-            logger.info("Creating CH prepare graph, {}", getMemInfo());
             CHPreparationGraph.TurnCostFunction turnCostFunction = CHPreparationGraph.buildTurnCostFunctionFromTurnCostStorage(graph, chConfig.getWeighting());
             prepareGraph = CHPreparationGraph.edgeBased(graph.getNodes(), graph.getEdges(), turnCostFunction);
             nodeContractor = new EdgeBasedNodeContractor(prepareGraph, chBuilder, pMap);
         } else {
-            logger.info("Creating CH prepare graph, {}", getMemInfo());
             prepareGraph = CHPreparationGraph.nodeBased(graph.getNodes(), graph.getEdges());
             nodeContractor = new NodeBasedNodeContractor(prepareGraph, chBuilder, pMap);
         }
@@ -289,13 +283,14 @@ public class PrepareContractionHierarchies {
                 // skipped nodes are already set to maxLevel
                 break;
 
+            int neighborCount = 0;
             // there might be multiple edges going to the same neighbor nodes -> only calculate priority once per node
             for (IntCursor neighbor : neighbors) {
-                int nn = neighbor.value;
-                if (neighborUpdate && rand.nextInt(100) < params.getNeighborUpdatePercentage()) {
+                if (neighborUpdate && (params.getMaxNeighborUpdates() < 0 || neighborCount < params.getMaxNeighborUpdates()) && rand.nextInt(100) < params.getNeighborUpdatePercentage()) {
+                    neighborCount++;
                     neighborUpdateSW.start();
-                    float priority = calculatePriority(nn);
-                    sortedNodes.update(nn, priority);
+                    float priority = calculatePriority(neighbor.value);
+                    sortedNodes.update(neighbor.value, priority);
                     neighborUpdateSW.stop();
                 }
             }
@@ -434,16 +429,14 @@ public class PrepareContractionHierarchies {
     public static class Result {
         private final CHConfig chConfig;
         private final CHStorage chStorage;
-        private final long dijkstraCount;
         private final long shortcuts;
         private final double lazyTime;
         private final double periodTime;
         private final double neighborTime;
         private final long totalPrepareTime;
 
-        private Result(CHConfig chConfig, CHStorage chStorage, long dijkstraCount, long shortcuts, double lazyTime, double periodTime, double neighborTime, long totalPrepareTime) {
+        private Result(CHConfig chConfig, CHStorage chStorage, long shortcuts, double lazyTime, double periodTime, double neighborTime, long totalPrepareTime) {
             this.chStorage = chStorage;
-            this.dijkstraCount = dijkstraCount;
             this.shortcuts = shortcuts;
             this.lazyTime = lazyTime;
             this.periodTime = periodTime;
@@ -458,10 +451,6 @@ public class PrepareContractionHierarchies {
 
         public CHStorage getCHStorage() {
             return chStorage;
-        }
-
-        public long getDijkstraCount() {
-            return dijkstraCount;
         }
 
         public long getShortcuts() {
@@ -509,6 +498,11 @@ public class PrepareContractionHierarchies {
          */
         private int neighborUpdatePercentage;
         /**
+         * Specifies the maximum number of neighbor updates per contracted node. For example for the foot profile we
+         * see a large number of neighbor updates that can be limited with this setting. -1 means unlimited.
+         */
+        private int maxNeighborUpdates;
+        /**
          * Defines how many nodes (percentage) should be contracted. A value of 20 means only the first 20% of all nodes
          * will be contracted. Higher values here mean longer preparation times, but faster queries (because the
          * graph will be fully contracted).
@@ -522,19 +516,21 @@ public class PrepareContractionHierarchies {
         private int logMessagesPercentage;
 
         static Params forTraversalMode(TraversalMode traversalMode) {
+            // Lower values for the neighbor update percentage (and/or max neighbor updates) yield a slower
+            // preparation but possibly fewer shortcuts and a slightly better query time.
             if (traversalMode.isEdgeBased()) {
-                // todo: optimize
-                return new Params(0, 100, 0, 100, 5);
+                return new Params(0, 100, 50, 3, 100, 5);
             } else {
-                return new Params(0, 0, 100, 100, 20);
+                return new Params(0, 100, 100, 2, 100, 20);
             }
         }
 
-        private Params(int periodicUpdatesPercentage, int lastNodesLazyUpdatePercentage, int neighborUpdatePercentage,
+        private Params(int periodicUpdatesPercentage, int lastNodesLazyUpdatePercentage, int neighborUpdatePercentage, int maxNeighborUpdates,
                        int nodesContractedPercentage, int logMessagesPercentage) {
             setPeriodicUpdatesPercentage(periodicUpdatesPercentage);
             setLastNodesLazyUpdatePercentage(lastNodesLazyUpdatePercentage);
             setNeighborUpdatePercentage(neighborUpdatePercentage);
+            setMaxNeighborUpdates(maxNeighborUpdates);
             setNodesContractedPercentage(nodesContractedPercentage);
             setLogMessagesPercentage(logMessagesPercentage);
         }
@@ -564,6 +560,14 @@ public class PrepareContractionHierarchies {
         void setNeighborUpdatePercentage(int neighborUpdatePercentage) {
             checkPercentage(NEIGHBOR_UPDATES, neighborUpdatePercentage);
             this.neighborUpdatePercentage = neighborUpdatePercentage;
+        }
+
+        int getMaxNeighborUpdates() {
+            return maxNeighborUpdates;
+        }
+
+        void setMaxNeighborUpdates(int maxNeighborUpdates) {
+            this.maxNeighborUpdates = maxNeighborUpdates;
         }
 
         int getNodesContractedPercentage() {

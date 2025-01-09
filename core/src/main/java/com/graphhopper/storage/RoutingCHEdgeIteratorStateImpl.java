@@ -18,9 +18,7 @@
 
 package com.graphhopper.storage;
 
-import com.graphhopper.routing.ev.BooleanEncodedValue;
 import com.graphhopper.routing.weighting.Weighting;
-import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.EdgeIteratorState;
 
 import static com.graphhopper.util.EdgeIterator.NO_EDGE;
@@ -29,7 +27,6 @@ public class RoutingCHEdgeIteratorStateImpl implements RoutingCHEdgeIteratorStat
     final CHStorage store;
     final BaseGraph baseGraph;
     private final Weighting weighting;
-    private final BooleanEncodedValue accessEnc;
     int edgeId = -1;
     int baseNode;
     int adjNode;
@@ -41,7 +38,6 @@ public class RoutingCHEdgeIteratorStateImpl implements RoutingCHEdgeIteratorStat
         this.baseGraph = baseGraph;
         this.baseEdgeState = baseEdgeState;
         this.weighting = weighting;
-        this.accessEnc = weighting.getFlagEncoder().getAccessEnc();
     }
 
     boolean init(int edge, int expectedAdjNode) {
@@ -78,17 +74,17 @@ public class RoutingCHEdgeIteratorStateImpl implements RoutingCHEdgeIteratorStat
     }
 
     @Override
-    public int getOrigEdgeFirst() {
+    public int getOrigEdgeKeyFirst() {
         if (!isShortcut() || !store.isEdgeBased())
-            return getEdge();
-        return store.getOrigEdgeFirst(shortcutPointer);
+            return edgeState().getEdgeKey();
+        return store.getOrigEdgeKeyFirst(shortcutPointer);
     }
 
     @Override
-    public int getOrigEdgeLast() {
+    public int getOrigEdgeKeyLast() {
         if (!isShortcut() || !store.isEdgeBased())
-            return getEdge();
-        return store.getOrigEdgeLast(shortcutPointer);
+            return edgeState().getEdgeKey();
+        return store.getOrigEdgeKeyLast(shortcutPointer);
     }
 
     @Override
@@ -123,27 +119,12 @@ public class RoutingCHEdgeIteratorStateImpl implements RoutingCHEdgeIteratorStat
         if (isShortcut()) {
             return store.getWeight(shortcutPointer);
         } else {
-            return getOrigEdgeWeight(reverse, true);
+            return getOrigEdgeWeight(reverse);
         }
     }
 
-    /**
-     * @param needWeight if true this method will return as soon as its clear that the weight is finite (no need to
-     *                   do the full computation)
-     */
-    double getOrigEdgeWeight(boolean reverse, boolean needWeight) {
-        // todo: for #1835 move the access check into the weighting
-        final EdgeIteratorState baseEdge = getBaseGraphEdgeState();
-        final boolean access = reverse
-                ? baseEdge.getReverse(accessEnc)
-                : baseEdge.get(accessEnc);
-        if (baseEdge.getBaseNode() != baseEdge.getAdjNode() && !access) {
-            return Double.POSITIVE_INFINITY;
-        }
-        if (!needWeight) {
-            return 0;
-        }
-        return weighting.calcEdgeWeight(baseEdge, reverse);
+    double getOrigEdgeWeight(boolean reverse) {
+        return weighting.calcEdgeWeight(getBaseGraphEdgeState(), reverse);
     }
 
     private EdgeIteratorState getBaseGraphEdgeState() {

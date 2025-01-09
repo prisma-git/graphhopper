@@ -136,9 +136,9 @@ public abstract class Entity implements Serializable, Cloneable {
             } else try {
                 val = Integer.parseInt(str);
                 if (mapping != null) {
-                    Integer mappedVal = mapping.get(new Integer(val));
+                    Integer mappedVal = mapping.get(val);
                     if (mappedVal != null)
-                        val = mappedVal.intValue();
+                        val = mappedVal;
                 }
                 checkRangeInclusive(min, max, val);
             } catch (NumberFormatException nfe) {
@@ -230,6 +230,9 @@ public abstract class Entity implements Serializable, Cloneable {
             V val = null;
             if (str != null) {
                 val = target.get(str);
+                if (val == null) {
+                    feed.errors.add(new ReferentialIntegrityError(tableName, row, column, str));
+                }
             }
             return val;
         }

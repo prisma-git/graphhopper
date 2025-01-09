@@ -19,10 +19,7 @@
 package com.graphhopper.routing.util.parsers;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.ev.EnumEncodedValue;
-import com.graphhopper.routing.ev.RoadEnvironment;
-import com.graphhopper.routing.util.CarFlagEncoder;
-import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.ev.*;
 import com.graphhopper.storage.IntsRef;
 import org.junit.jupiter.api.Test;
 
@@ -32,17 +29,22 @@ class OSMRoadEnvironmentParserTest {
 
     @Test
     void ferry() {
-        OSMRoadEnvironmentParser parser = new OSMRoadEnvironmentParser();
-        CarFlagEncoder carEncoder = new CarFlagEncoder();
-        EncodingManager em = new EncodingManager.Builder()
-                .add(carEncoder)
-                .add(parser).build();
-        EnumEncodedValue<RoadEnvironment> roadEnvironmentEnc = em.getEnumEncodedValue(RoadEnvironment.KEY, RoadEnvironment.class);
-        IntsRef edgeFlags = em.createEdgeFlags();
+        EnumEncodedValue<RoadEnvironment> roadEnvironmentEnc = RoadEnvironment.create();
+        roadEnvironmentEnc.init(new EncodedValue.InitializerConfig());
+        OSMRoadEnvironmentParser parser = new OSMRoadEnvironmentParser(roadEnvironmentEnc);
+        EdgeIntAccess edgeIntAccess = new ArrayEdgeIntAccess(1);
+        int edgeId = 0;
         ReaderWay way = new ReaderWay(0);
         way.setTag("route", "shuttle_train");
-        parser.handleWayTags(edgeFlags, way, em.createRelationFlags());
-        RoadEnvironment roadEnvironment = roadEnvironmentEnc.getEnum(false, edgeFlags);
+        parser.handleWayTags(edgeId, edgeIntAccess, way, new IntsRef(2));
+        RoadEnvironment roadEnvironment = roadEnvironmentEnc.getEnum(false, edgeId, edgeIntAccess);
+        assertEquals(RoadEnvironment.FERRY, roadEnvironment);
+
+        way = new ReaderWay(1);
+        way.setTag("highway", "footway");
+        way.setTag("route", "ferry");
+        parser.handleWayTags(edgeId, edgeIntAccess = new ArrayEdgeIntAccess(1), way, new IntsRef(2));
+        roadEnvironment = roadEnvironmentEnc.getEnum(false, edgeId, edgeIntAccess);
         assertEquals(RoadEnvironment.FERRY, roadEnvironment);
     }
 

@@ -97,10 +97,13 @@ public class Parameters {
         public static final String U_TURN_COSTS = "u_turn_costs";
         public static final String MAX_VISITED_NODES = "max_visited_nodes";
         public static final String INIT_MAX_VISITED_NODES = ROUTING_INIT_PREFIX + "max_visited_nodes";
+        public static final String TIMEOUT_MS = "timeout_ms";
+        public static final String INIT_TIMEOUT_MS = ROUTING_INIT_PREFIX + "timeout_ms";
         /**
          * if true the response will contain turn instructions
          */
         public static final String INSTRUCTIONS = "instructions";
+        public static final String INIT_INSTRUCTIONS = ROUTING_INIT_PREFIX + "instructions";
         /**
          * if true the response will contain a point list
          */
@@ -119,18 +122,13 @@ public class Parameters {
         public static final String PASS_THROUGH = "pass_through";
         public static final String POINT_HINT = "point_hint";
         public static final String CURBSIDE = "curbside";
-        public static final String FORCE_CURBSIDE = "force_curbside";
+        public static final String CURBSIDE_STRICTNESS = "curbside_strictness";
         public static final String SNAP_PREVENTION = "snap_prevention";
         /**
          * default heading penalty in seconds
          */
         public static final double DEFAULT_HEADING_PENALTY = 300;
         public static final String HEADING_PENALTY = "heading_penalty";
-        /**
-         * block road access via a point in the format lat,lon or an area defined by a circle lat,lon,radius or
-         * a rectangle lat1,lon1,lat2,lon2
-         */
-        public static final String BLOCK_AREA = "block_area";
     }
 
     /**
@@ -196,13 +194,24 @@ public class Parameters {
 
         public static final String PATH_DETAILS = "details";
 
-        public static final String AVERAGE_SPEED = "average_speed";
+        // these details are directly accessing the KVStorage for edges and the names have to be identical
         public static final String STREET_NAME = "street_name";
+        public static final String STREET_REF = "street_ref";
+        public static final String STREET_DESTINATION = "street_destination";
+        public static final String STREET_DESTINATION_REF = "street_destination_ref";
+        public static final String MOTORWAY_JUNCTION = "motorway_junction";
+
+        public static final String AVERAGE_SPEED = "average_speed";
         public static final String EDGE_ID = "edge_id";
         public static final String EDGE_KEY = "edge_key";
         public static final String TIME = "time";
         public static final String WEIGHT = "weight";
         public static final String DISTANCE = "distance";
+        public static final String INTERSECTION = "intersection";
+
+        public static final String LEG_TIME = "leg_time";
+        public static final String LEG_DISTANCE = "leg_distance";
+        public static final String LEG_WEIGHT = "leg_weight";
     }
 
 }

@@ -17,39 +17,45 @@
  */
 package com.graphhopper.routing.ev;
 
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.util.TransportationMode;
+import com.graphhopper.routing.util.countryrules.CountryRule;
 import com.graphhopper.util.Helper;
 
 /**
- * This enum defines the road access of an edge. Most edges are accessible from everyone and so the default value is
- * YES. But some have restrictions like "accessible only for customers" or when delivering. Unknown tags will get the
- * value OTHER. The NO value does not permit any access.
+ * This enum defines the road access of an edge. Most edges are accessible from everyone and so the
+ * default value is YES. But some have restrictions like "accessible only for customers" or when
+ * delivering. The NO value does not permit any access.
  */
 public enum RoadAccess {
-    YES("yes"), DESTINATION("destination"), CUSTOMERS("customers"), DELIVERY("delivery"),
-    FORESTRY("forestry"), AGRICULTURAL("agricultural"),
-    PRIVATE("private"), OTHER("other"), NO("no");
+    YES, DESTINATION, CUSTOMERS, DELIVERY, FORESTRY, AGRICULTURAL, PRIVATE, NO;
 
     public static final String KEY = "road_access";
 
-    private final String name;
-
-    RoadAccess(String name) {
-        this.name = name;
+    public static EnumEncodedValue<RoadAccess> create() {
+        return new EnumEncodedValue<>(RoadAccess.KEY, RoadAccess.class);
     }
 
     @Override
     public String toString() {
-        return name;
+        return Helper.toLowerCase(super.toString());
     }
 
     public static RoadAccess find(String name) {
         if (name == null)
             return YES;
+        if (name.equalsIgnoreCase("permit"))
+            return PRIVATE;
         try {
             // public and permissive will be converted into "yes"
             return RoadAccess.valueOf(Helper.toUpperCase(name));
         } catch (IllegalArgumentException ex) {
             return YES;
         }
+    }
+
+    public static RoadAccess countryHook(ReaderWay readerWay, RoadAccess roadAccess) {
+        CountryRule countryRule = readerWay.getTag("country_rule", null);
+        return countryRule == null ? roadAccess : countryRule.getAccess(readerWay, TransportationMode.CAR, roadAccess == null ? RoadAccess.YES : roadAccess);
     }
 }

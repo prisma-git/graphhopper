@@ -23,9 +23,11 @@ package com.graphhopper.routing;
  */
 public class RouterConfig {
     private int maxVisitedNodes = Integer.MAX_VALUE;
+    private long timeoutMillis = Long.MAX_VALUE;
     private int maxRoundTripRetries = 3;
     private int nonChMaxWaypointDistance = Integer.MAX_VALUE;
     private boolean calcPoints = true;
+    private boolean instructionsEnabled = true;
     private boolean simplifyResponse = true;
     private double elevationWayPointMaxDistance = Double.MAX_VALUE;
     private int activeLandmarkCount = 8;
@@ -40,6 +42,19 @@ public class RouterConfig {
      */
     public void setMaxVisitedNodes(int maxVisitedNodes) {
         this.maxVisitedNodes = maxVisitedNodes;
+    }
+
+    public long getTimeoutMillis() {
+        return timeoutMillis;
+    }
+
+    /**
+     * Limits the runtime of routing requests to the given amount of milliseconds. This only works up to a certain
+     * precision, but should be sufficient to cancel long-running requests in most cases. The exact implementation of
+     * the timeout depends on the routing algorithm.
+     */
+    public void setTimeoutMillis(long timeoutMillis) {
+        this.timeoutMillis = timeoutMillis;
     }
 
     public int getMaxRoundTripRetries() {
@@ -69,12 +84,20 @@ public class RouterConfig {
         this.calcPoints = calcPoints;
     }
 
+    public boolean isInstructionsEnabled() {
+        return instructionsEnabled;
+    }
+
+    public void setInstructionsEnabled(boolean instructionsEnabled) {
+        this.instructionsEnabled = instructionsEnabled;
+    }
+
     public boolean isSimplifyResponse() {
         return simplifyResponse;
     }
 
     /**
-     * This method specifies if the returned path should be simplified or not, via douglas-peucker
+     * This method specifies if the returned path should be simplified or not, via Ramer-Douglas-Peucker
      * or similar algorithm.
      */
     public void setSimplifyResponse(boolean simplifyResponse) {

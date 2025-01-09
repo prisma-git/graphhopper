@@ -21,15 +21,9 @@ package com.graphhopper.routing.ch;
 import com.carrotsearch.hppc.*;
 import com.carrotsearch.hppc.sorting.IndirectComparator;
 import com.carrotsearch.hppc.sorting.IndirectSort;
-import com.graphhopper.routing.ev.DecimalEncodedValue;
-import com.graphhopper.routing.ev.TurnCost;
 import com.graphhopper.routing.util.AllEdgesIterator;
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
-import com.graphhopper.storage.TurnCostStorage;
-import com.graphhopper.util.BitUtil;
-import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.GHUtility;
 
 import static com.graphhopper.util.ArrayUtil.zero;
@@ -37,6 +31,8 @@ import static com.graphhopper.util.ArrayUtil.zero;
 /**
  * Graph data structure used for CH preparation. It allows caching weights, and edges that are not needed anymore
  * (those adjacent to contracted nodes) can be removed (see {@link #disconnect}.
+ *
+ * @author easbar
  */
 public class CHPreparationGraph {
     private final int nodes;
@@ -84,7 +80,7 @@ public class CHPreparationGraph {
         shortcutsByPrepareEdges = new IntArrayList();
         degrees = new int[nodes];
         origGraphBuilder = edgeBased ? new OrigGraph.Builder() : null;
-        neighborSet = new IntHashSet();
+        neighborSet = new IntScatterSet();
         nextShortcutId = edges;
     }
 
@@ -97,71 +93,18 @@ public class CHPreparationGraph {
                     graph.getEdges() + " vs. " + prepareGraph.getOriginalEdges());
         AllEdgesIterator iter = graph.getAllEdges();
         while (iter.next()) {
-            double weightFwd = weighting.calcEdgeWeightWithAccess(iter, false);
-            double weightBwd = weighting.calcEdgeWeightWithAccess(iter, true);
+            double weightFwd = weighting.calcEdgeWeight(iter, false);
+            double weightBwd = weighting.calcEdgeWeight(iter, true);
             prepareGraph.addEdge(iter.getBaseNode(), iter.getAdjNode(), iter.getEdge(), weightFwd, weightBwd);
         }
         prepareGraph.prepareForContraction();
     }
 
-    /**
-     * Builds a turn cost function for a given graph('s turn cost storage) and a weighting.
-     * The trivial implementation would be simply returning {@link Weighting#calcTurnWeight}. However, it turned out
-     * that reading all turn costs for the current encoder and then storing them in separate arrays upfront speeds up
-     * edge-based CH preparation by about 25%. See #2084
-     */
     public static TurnCostFunction buildTurnCostFunctionFromTurnCostStorage(Graph graph, Weighting weighting) {
-        FlagEncoder encoder = weighting.getFlagEncoder();
-        String key = TurnCost.key(encoder.toString());
-        if (!encoder.hasEncodedValue(key))
-            return (inEdge, viaNode, outEdge) -> 0;
-
-        DecimalEncodedValue turnCostEnc = encoder.getDecimalEncodedValue(key);
-        TurnCostStorage turnCostStorage = graph.getTurnCostStorage();
-        // we maintain a list of inEdge/outEdge/turn-cost triples (we use two arrays for this) that is sorted by nodes
-        LongArrayList turnCostEdgePairs = new LongArrayList();
-        DoubleArrayList turnCosts = new DoubleArrayList();
-        // for each node we store the index of the first turn cost entry/triple in the list
-        final int[] turnCostNodes = new int[graph.getNodes() + 1];
-        TurnCostStorage.TurnRelationIterator tcIter = turnCostStorage.getAllTurnRelations();
-        int lastNode = -1;
-        while (tcIter.next()) {
-            int viaNode = tcIter.getViaNode();
-            if (viaNode < lastNode)
-                throw new IllegalStateException();
-            long edgePair = BitUtil.LITTLE.combineIntsToLong(tcIter.getFromEdge(), tcIter.getToEdge());
-            // note that as long as we only use OSM turn restrictions all the turn costs are infinite anyway
-            double turnCost = tcIter.getCost(turnCostEnc);
-            int index = turnCostEdgePairs.size();
-            turnCostEdgePairs.add(edgePair);
-            turnCosts.add(turnCost);
-            if (viaNode != lastNode) {
-                for (int i = lastNode + 1; i <= viaNode; i++) {
-                    turnCostNodes[i] = index;
-                }
-            }
-            lastNode = viaNode;
-        }
-        for (int i = lastNode + 1; i <= turnCostNodes.length - 1; i++) {
-            turnCostNodes[i] = turnCostEdgePairs.size();
-        }
-        turnCostNodes[turnCostNodes.length - 1] = turnCostEdgePairs.size();
-
-        // currently the u-turn costs are the same for all junctions, so for now we just get them for one of them
-        double uTurnCosts = weighting.calcTurnWeight(1, 0, 1);
-        return (inEdge, viaNode, outEdge) -> {
-            if (!EdgeIterator.Edge.isValid(inEdge) || !EdgeIterator.Edge.isValid(outEdge))
-                return 0;
-            else if (inEdge == outEdge)
-                return uTurnCosts;
-            // traverse all turn cost entries we have for this viaNode and return the turn costs if we find a match
-            for (int i = turnCostNodes[viaNode]; i < turnCostNodes[viaNode + 1]; i++) {
-                long l = turnCostEdgePairs.get(i);
-                if (inEdge == BitUtil.LITTLE.getIntLow(l) && outEdge == BitUtil.LITTLE.getIntHigh(l))
-                    return turnCosts.get(i);
-            }
-            return 0;
-        };
+        // At some point we used an optimized version where we copied the turn costs to sorted arrays
+        // temporarily. This seemed to be around 25% faster according to measurements on the Bavaria
+        // map, but for bigger maps the improvement is less, around 10% for planet. See also #2084
+        return weighting::calcTurnWeight;
     }
 
     public int getNodes() {
@@ -178,6 +121,8 @@ public class CHPreparationGraph {
 
     public void addEdge(int from, int to, int edge, double weightFwd, double weightBwd) {
         checkNotReady();
+        if (from == to)
+            throw new IllegalArgumentException("Loop edges are no longer supported since #2862");
         boolean fwd = Double.isFinite(weightFwd);
         boolean bwd = Double.isFinite(weightBwd);
         if (!fwd && !bwd)
@@ -252,8 +197,8 @@ public class CHPreparationGraph {
         return origGraph.createInOrigEdgeExplorer();
     }
 
-    public double getTurnWeight(int inEdge, int viaNode, int outEdge) {
-        return turnCostFunction.getTurnWeight(inEdge, viaNode, outEdge);
+    public double getTurnWeight(int inEdgeKey, int viaNode, int outEdgeKey) {
+        return turnCostFunction.getTurnWeight(GHUtility.getEdgeFromEdgeKey(inEdgeKey), viaNode, GHUtility.getEdgeFromEdgeKey(outEdgeKey));
     }
 
     public IntContainer disconnect(int node) {
@@ -261,7 +206,6 @@ public class CHPreparationGraph {
         // we use this neighbor set to guarantee a deterministic order of the returned
         // node ids
         neighborSet.clear();
-        IntArrayList neighbors = new IntArrayList(getDegree(node));
         PrepareEdge currOut = prepareEdgesOut[node];
         while (currOut != null) {
             int adjNode = currOut.getNodeB();
@@ -273,8 +217,7 @@ public class CHPreparationGraph {
                 continue;
             }
             removeInEdge(adjNode, currOut);
-            if (neighborSet.add(adjNode))
-                neighbors.add(adjNode);
+            neighborSet.add(adjNode);
             currOut = currOut.getNextOut(node);
         }
         PrepareEdge currIn = prepareEdgesIn[node];
@@ -288,14 +231,13 @@ public class CHPreparationGraph {
                 continue;
             }
             removeOutEdge(adjNode, currIn);
-            if (neighborSet.add(adjNode))
-                neighbors.add(adjNode);
+            neighborSet.add(adjNode);
             currIn = currIn.getNextIn(node);
         }
         prepareEdgesOut[node] = null;
         prepareEdgesIn[node] = null;
         degrees[node] = 0;
-        return neighbors;
+        return neighborSet;
     }
 
     private void removeOutEdge(int node, PrepareEdge prepareEdge) {
@@ -474,7 +416,7 @@ public class CHPreparationGraph {
 
         @Override
         public String toString() {
-            return currEdge == null ? "not_started" : getBaseNode() + "-" + getAdjNode();
+            return currEdge == null ? "not_started" : currEdge.toString();
         }
 
         private boolean nodeAisBase() {
@@ -579,14 +521,12 @@ public class CHPreparationGraph {
 
         @Override
         public int getOrigEdgeKeyFirstAB() {
-            int key = prepareEdge << 1;
-            return nodeA > nodeB ? key + 1 : key;
+            return GHUtility.createEdgeKey(prepareEdge, false);
         }
 
         @Override
         public int getOrigEdgeKeyFirstBA() {
-            int key = prepareEdge << 1;
-            return nodeB > nodeA ? key + 1 : key;
+            return GHUtility.createEdgeKey(prepareEdge, true);
         }
 
         @Override
@@ -853,20 +793,20 @@ public class CHPreparationGraph {
 
     /**
      * This helper graph can be used to quickly obtain the edge-keys of the edges of a node. It is only used for
-     * edge-based CH. In principle we could use base graph for this, but it turned out it is faster to use this
+     * edge-based CH. In principle, we could use base graph for this, but it turned out it is faster to use this
      * graph (because it does not need to read all the edge flags to determine the access flags).
      */
-    private static class OrigGraph {
-        // we store a list of 'edges' in the format: adjNode|edgeId|accessFlags, we use two ints for each edge
-        private final IntArrayList adjNodes;
-        private final IntArrayList edgesAndFlags;
+    static class OrigGraph {
+        // we store a list of 'edges' in the format: adjNode|fwdAccess|edgeKey|bwdAccess, we use two ints for each edge
+        private final IntArrayList adjNodesAndFwdFlags;
+        private final IntArrayList keysAndBwdFlags;
         // for each node we store the index at which the edges for this node begin in the above edge list
         private final IntArrayList firstEdgesByNode;
 
-        private OrigGraph(IntArrayList firstEdgesByNode, IntArrayList adjNodes, IntArrayList edgesAndFlags) {
+        private OrigGraph(IntArrayList firstEdgesByNode, IntArrayList adjNodesAndFwdFlags, IntArrayList keysAndBwdFlags) {
             this.firstEdgesByNode = firstEdgesByNode;
-            this.adjNodes = adjNodes;
-            this.edgesAndFlags = edgesAndFlags;
+            this.adjNodesAndFwdFlags = adjNodesAndFwdFlags;
+            this.keysAndBwdFlags = keysAndBwdFlags;
         }
 
         PrepareGraphOrigEdgeExplorer createOutOrigEdgeExplorer() {
@@ -879,21 +819,21 @@ public class CHPreparationGraph {
 
         static class Builder {
             private final IntArrayList fromNodes = new IntArrayList();
-            private final IntArrayList toNodes = new IntArrayList();
-            private final IntArrayList edgesAndFlags = new IntArrayList();
+            private final IntArrayList toNodesAndFwdFlags = new IntArrayList();
+            private final IntArrayList keysAndBwdFlags = new IntArrayList();
             private int maxFrom = -1;
             private int maxTo = -1;
 
             void addEdge(int from, int to, int edge, boolean fwd, boolean bwd) {
                 fromNodes.add(from);
-                toNodes.add(to);
-                edgesAndFlags.add(getEdgeWithFlags(edge, fwd, bwd));
+                toNodesAndFwdFlags.add(getIntWithFlag(to, fwd));
+                keysAndBwdFlags.add(getIntWithFlag(GHUtility.createEdgeKey(edge, false), bwd));
                 maxFrom = Math.max(maxFrom, from);
                 maxTo = Math.max(maxTo, to);
 
                 fromNodes.add(to);
-                toNodes.add(from);
-                edgesAndFlags.add(getEdgeWithFlags(edge, bwd, fwd));
+                toNodesAndFwdFlags.add(getIntWithFlag(from, bwd));
+                keysAndBwdFlags.add(getIntWithFlag(GHUtility.createEdgeKey(edge, true), fwd));
                 maxFrom = Math.max(maxFrom, to);
                 maxTo = Math.max(maxTo, from);
             }
@@ -901,22 +841,23 @@ public class CHPreparationGraph {
             OrigGraph build() {
                 int[] sortOrder = IndirectSort.mergesort(0, fromNodes.elementsCount, new IndirectComparator.AscendingIntComparator(fromNodes.buffer));
                 sortAndTrim(fromNodes, sortOrder);
-                sortAndTrim(toNodes, sortOrder);
-                sortAndTrim(edgesAndFlags, sortOrder);
-                return new OrigGraph(buildFirstEdgesByNode(), toNodes, edgesAndFlags);
+                sortAndTrim(toNodesAndFwdFlags, sortOrder);
+                sortAndTrim(keysAndBwdFlags, sortOrder);
+                return new OrigGraph(buildFirstEdgesByNode(), toNodesAndFwdFlags, keysAndBwdFlags);
             }
 
-            private int getEdgeWithFlags(int edge, boolean fwd, boolean bwd) {
-                // we use only 30 bits for the edge Id and store two access flags along with the same int
-                if (edge >= Integer.MAX_VALUE >> 2)
-                    throw new IllegalArgumentException("Maximum edge ID exceeded: " + Integer.MAX_VALUE);
-                edge <<= 1;
-                if (fwd)
-                    edge++;
-                edge <<= 1;
-                if (bwd)
-                    edge++;
-                return edge;
+            private static int getIntWithFlag(int val, boolean access) {
+                // we use only 31 bits for the val and store an access flag along with the same int
+                // this allows for a maximum of 1073mio edges (and 2147mio nodes) in base graph
+                // which is still enough for planet-wide OSM, but if we exceed this limit we need to
+                // move the access bits somewhere else or store the edge instead of the val as we
+                // did before #2567 (only here)
+                if (val < 0)
+                    throw new IllegalArgumentException("Maximum node or edge key exceeded: " + val + ", max: " + Integer.MAX_VALUE);
+                val <<= 1;
+                if (access)
+                    val++;
+                return val;
             }
 
             private IntArrayList buildFirstEdgesByNode() {
@@ -981,13 +922,12 @@ public class CHPreparationGraph {
 
         @Override
         public int getAdjNode() {
-            return graph.adjNodes.get(index);
+            return graph.adjNodesAndFwdFlags.get(index) >>> 1;
         }
 
         @Override
         public int getOrigEdgeKeyFirst() {
-            int e = graph.edgesAndFlags.get(index);
-            return GHUtility.createEdgeKey(node, getAdjNode(), e >> 2, false);
+            return graph.keysAndBwdFlags.get(index) >>> 1;
         }
 
         @Override
@@ -996,12 +936,15 @@ public class CHPreparationGraph {
         }
 
         private boolean hasAccess() {
-            int e = graph.edgesAndFlags.get(index);
-            if (reverse) {
-                return (e & 0b01) == 0b01;
-            } else {
-                return (e & 0b10) == 0b10;
-            }
+            int e = reverse
+                    ? graph.keysAndBwdFlags.get(index)
+                    : graph.adjNodesAndFwdFlags.get(index);
+            return (e & 0b01) == 0b01;
+        }
+
+        @Override
+        public String toString() {
+            return getBaseNode() + "-" + getAdjNode() + "(" + getOrigEdgeKeyFirst() + ")";
         }
     }
 

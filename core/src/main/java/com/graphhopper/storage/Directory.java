@@ -17,9 +17,13 @@
  */
 package com.graphhopper.storage;
 
+import java.util.Map;
+
 /**
- * Maintains a collection of DataAccess objects stored at the same location. One GraphStorage per
- * Directory as we need one to maintain one DataAccess object for nodes, edges and location2id
+ * Maintains a collection of DataAccess objects stored at the same location. One
+ * GraphStorage per
+ * Directory as we need one to maintain one DataAccess object for nodes, edges
+ * and location2id
  * index.
  * <p>
  *
@@ -32,13 +36,15 @@ public interface Directory {
     String getLocation();
 
     /**
-     * Creates a new DataAccess object with the given name in the location of this Directory. Each name can only
+     * Creates a new DataAccess object with the given name in the location of this
+     * Directory. Each name can only
      * be used once.
      */
     DataAccess create(String name);
 
     /**
-     * @param segmentSize segment size in bytes or -1 to use the default of the corresponding DataAccess implementation
+     * @param segmentSize segment size in bytes or -1 to use the default of the
+     *                    corresponding DataAccess implementation
      */
     DataAccess create(String name, int segmentSize);
 
@@ -64,11 +70,14 @@ public interface Directory {
     void clear();
 
     /**
-     * Releases all allocated resources from the directory without removing backing files.
+     * Releases all allocated resources from the directory without removing backing
+     * files.
      */
     void close();
 
     Directory create();
 
-	DataAccess findOrCreate(String name);
+    DataAccess findOrCreate(String name);
+
+    Map<String, DataAccess> getDAs();
 }

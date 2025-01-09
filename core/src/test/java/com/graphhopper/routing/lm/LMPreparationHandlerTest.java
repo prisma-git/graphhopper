@@ -3,12 +3,11 @@ package com.graphhopper.routing.lm;
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.config.LMProfile;
 import com.graphhopper.config.Profile;
-import com.graphhopper.routing.util.CarFlagEncoder;
+import com.graphhopper.routing.ev.DecimalEncodedValue;
+import com.graphhopper.routing.ev.DecimalEncodedValueImpl;
 import com.graphhopper.routing.util.EncodingManager;
-import com.graphhopper.routing.util.FlagEncoder;
-import com.graphhopper.routing.weighting.FastestWeighting;
-import com.graphhopper.routing.weighting.ShortestWeighting;
-import com.graphhopper.storage.GraphBuilder;
+import com.graphhopper.routing.weighting.SpeedWeighting;
+import com.graphhopper.storage.BaseGraph;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -35,13 +34,13 @@ public class LMPreparationHandlerTest {
                 new LMProfile("conf1").setMaximumLMWeight(65_000),
                 new LMProfile("conf2").setMaximumLMWeight(20_000)
         );
-        FlagEncoder car = new CarFlagEncoder();
-        EncodingManager em = EncodingManager.create(car);
+        DecimalEncodedValue speedEnc = new DecimalEncodedValueImpl("speed", 5, 5, false);
+        EncodingManager em = EncodingManager.start().add(speedEnc).build();
         List<LMConfig> lmConfigs = Arrays.asList(
-                new LMConfig("conf1", new FastestWeighting(car)),
-                new LMConfig("conf2", new ShortestWeighting(car))
+                new LMConfig("conf1", new SpeedWeighting(speedEnc)),
+                new LMConfig("conf2", new SpeedWeighting(speedEnc))
         );
-        List<PrepareLandmarks> preparations = handler.createPreparations(lmConfigs, new GraphBuilder(em).build(), null);
+        List<PrepareLandmarks> preparations = handler.createPreparations(lmConfigs, new BaseGraph.Builder(em).build(), em, null);
         assertEquals(1, preparations.get(0).getLandmarkStorage().getFactor(), .1);
         assertEquals(0.3, preparations.get(1).getLandmarkStorage().getFactor(), .1);
     }

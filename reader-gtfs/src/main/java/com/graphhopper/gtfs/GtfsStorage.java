@@ -18,6 +18,10 @@
 
 package com.graphhopper.gtfs;
 
+import com.carrotsearch.hppc.IntIntHashMap;
+import com.carrotsearch.hppc.IntObjectHashMap;
+import com.carrotsearch.hppc.cursors.IntIntCursor;
+import com.carrotsearch.hppc.cursors.IntObjectCursor;
 import com.conveyal.gtfs.GTFSFeed;
 import com.conveyal.gtfs.model.Fare;
 import com.graphhopper.storage.Directory;
@@ -27,10 +31,9 @@ import org.mapdb.DBMaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.Serializable;
+import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
@@ -57,7 +60,11 @@ public class GtfsStorage {
         this.ptGraph = ptGraph;
     }
 
-    public static class Validity implements Serializable {
+	public IntObjectHashMap<int[]> getSkippedEdgesForTransfer() {
+		return skippedEdgesForTransfer;
+	}
+
+	public static class Validity implements Serializable {
 		final BitSet validity;
 		final ZoneId zoneId;
 		final LocalDate start;
@@ -126,6 +133,14 @@ public class GtfsStorage {
 		public int hashCode() {
 			return Objects.hash(feedId, stopId);
 		}
+
+		@Override
+		public String toString() {
+			return "FeedIdWithStopId{" +
+					"feedId='" + feedId + '\'' +
+					", stopId='" + stopId + '\'' +
+					'}';
+		}
 	}
 
 	private boolean isClosed = false;
@@ -134,9 +149,10 @@ public class GtfsStorage {
 	private Map<String, GTFSFeed> gtfsFeeds = new HashMap<>();
 	private Map<String, Map<String, Fare>> faresByFeed;
 	private Map<FeedIdWithStopId, Integer> stationNodes;
+	private IntObjectHashMap<int[]> skippedEdgesForTransfer;
 
-	private Map<Integer, Integer> ptToStreet;
-	private Map<Integer, Integer> streetToPt;
+	private IntIntHashMap ptToStreet;
+	private IntIntHashMap streetToPt;
 
 	public enum EdgeType {
 		HIGHWAY, ENTER_TIME_EXPANDED_NETWORK, LEAVE_TIME_EXPANDED_NETWORK, ENTER_PT, EXIT_PT, HOP, DWELL, BOARD, ALIGHT, OVERNIGHT, TRANSFER, WAIT, WAIT_ARRIVAL
@@ -167,8 +183,40 @@ public class GtfsStorage {
 			GTFSFeed feed = new GTFSFeed(dbFile);
 			this.gtfsFeeds.put(gtfsFeedId, feed);
 		}
+		ptToStreet = deserialize("pt_to_street");
+		streetToPt = deserialize("street_to_pt");
+		skippedEdgesForTransfer = deserializeIntoIntObjectHashMap("skipped_edges_for_transfer");
 		postInit();
 		return true;
+	}
+
+
+	private IntIntHashMap deserialize(String filename) {
+		try (FileInputStream in = new FileInputStream(dir.getLocation() + filename)) {
+			ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(in));
+			int size = ois.readInt();
+			IntIntHashMap result = new IntIntHashMap();
+			for (int i = 0; i < size; i++) {
+				result.put(ois.readInt(), ois.readInt());
+			}
+			return result;
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private IntObjectHashMap<int[]> deserializeIntoIntObjectHashMap(String filename) {
+		try (FileInputStream in = new FileInputStream(dir.getLocation() + filename)) {
+			ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(in));
+			int size = ois.readInt();
+			IntObjectHashMap<int[]> result = new IntObjectHashMap<>();
+			for (int i = 0; i < size; i++) {
+				result.put(ois.readInt(), ((int[]) ois.readObject()));
+			}
+			return result;
+		} catch (IOException | ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	void create() {
@@ -186,8 +234,9 @@ public class GtfsStorage {
     private void init() {
 		this.gtfsFeedIds = data.getHashSet("gtfsFeeds");
 		this.stationNodes = data.getHashMap("stationNodes");
-		this.ptToStreet = data.getHashMap("ptToStreet");
-		this.streetToPt = data.getHashMap("streetToPt");
+		this.ptToStreet = new IntIntHashMap();
+		this.streetToPt = new IntIntHashMap();
+		this.skippedEdgesForTransfer = new IntObjectHashMap<>();
 	}
 
 	void loadGtfsFromZipFileOrDirectory(String id, File zipFileOrDirectory) {
@@ -226,11 +275,11 @@ public class GtfsStorage {
 		return faresByFeed;
 	}
 
-	public Map<Integer, Integer> getPtToStreet() {
+	public IntIntHashMap getPtToStreet() {
 		return ptToStreet;
 	}
 
-	public Map<Integer, Integer> getStreetToPt() {
+	public IntIntHashMap getStreetToPt() {
 		return streetToPt;
 	}
 
@@ -242,12 +291,42 @@ public class GtfsStorage {
 		return stationNodes;
 	}
 
+	public void flush() {
+		serialize("pt_to_street", ptToStreet);
+		serialize("street_to_pt", streetToPt);
+		serialize("skipped_edges_for_transfer", skippedEdgesForTransfer);
+	}
+
+	private void serialize(String filename, IntObjectHashMap<int[]> data) {
+		try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(Files.newOutputStream(Paths.get(dir.getLocation() + filename))))) {
+			oos.writeInt(data.size());
+			for (IntObjectCursor<int[]> e : data) {
+				oos.writeInt(e.key);
+				oos.writeObject(e.value);
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private void serialize(String filename, IntIntHashMap data) {
+		try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(Files.newOutputStream(Paths.get(dir.getLocation() + filename))))) {
+			oos.writeInt(data.size());
+			for (IntIntCursor e : data) {
+				oos.writeInt(e.key);
+				oos.writeInt(e.value);
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	public abstract static class PlatformDescriptor implements Serializable {
 		public String feed_id;
 		public String stop_id;
 
 		public static PlatformDescriptor route(String feed_id, String stop_id, String route_id) {
-			GtfsStorage.RoutePlatform routePlatform = new GtfsStorage.RoutePlatform();
+			RoutePlatform routePlatform = new RoutePlatform();
 			routePlatform.feed_id = feed_id;
 			routePlatform.stop_id = stop_id;
 			routePlatform.route_id = route_id;
@@ -268,8 +347,8 @@ public class GtfsStorage {
 			return Objects.hash(feed_id, stop_id);
 		}
 
-		public static GtfsStorage.RouteTypePlatform routeType(String feed_id, String stop_id, int route_type) {
-			GtfsStorage.RouteTypePlatform routeTypePlatform = new GtfsStorage.RouteTypePlatform();
+		public static RouteTypePlatform routeType(String feed_id, String stop_id, int route_type) {
+			RouteTypePlatform routeTypePlatform = new RouteTypePlatform();
 			routeTypePlatform.feed_id = feed_id;
 			routeTypePlatform.stop_id = stop_id;
 			routeTypePlatform.route_type = route_type;

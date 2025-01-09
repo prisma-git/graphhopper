@@ -20,33 +20,38 @@ package com.graphhopper.routing.weighting;
 
 import com.carrotsearch.hppc.IntArrayList;
 import com.graphhopper.routing.querygraph.QueryGraph;
-import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.storage.BaseGraph;
+import com.graphhopper.util.EdgeExplorer;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.EdgeIteratorState;
 
 import at.prismasolutions.graphhopper.extension.ExtendedWeighting;
 
 /**
- * Whenever a {@link QueryGraph} is used for shortest path calculations including turn costs we need to wrap the
- * {@link Weighting} we want to use with this class. Otherwise turn costs at virtual nodes and/or including virtual
+ * Whenever a {@link QueryGraph} is used for shortest path calculations
+ * including turn costs we need to wrap the
+ * {@link Weighting} we want to use with this class. Otherwise turn costs at
+ * virtual nodes and/or including virtual
  * edges will not be calculated correctly.
  */
 public class QueryGraphWeighting extends ExtendedWeighting {
+    private final BaseGraph graph;
     private final Weighting weighting;
     private final int firstVirtualNodeId;
     private final int firstVirtualEdgeId;
     private final IntArrayList closestEdges;
 
-    public QueryGraphWeighting(Weighting weighting, int firstVirtualNodeId, int firstVirtualEdgeId, IntArrayList closestEdges) {
+    public QueryGraphWeighting(BaseGraph graph, Weighting weighting, IntArrayList closestEdges) {
+        this.graph = graph;
         this.weighting = weighting;
-        this.firstVirtualNodeId = firstVirtualNodeId;
-        this.firstVirtualEdgeId = firstVirtualEdgeId;
+        this.firstVirtualNodeId = graph.getNodes();
+        this.firstVirtualEdgeId = graph.getEdges();
         this.closestEdges = closestEdges;
     }
 
     @Override
-    public double getMinWeight(double distance) {
-        return weighting.getMinWeight(distance);
+    public double calcMinWeightPerDistance() {
+        return weighting.calcMinWeightPerDistance();
     }
 
     @Override
@@ -61,24 +66,62 @@ public class QueryGraphWeighting extends ExtendedWeighting {
         }
         if (isVirtualNode(viaNode)) {
             if (isUTurn(inEdge, outEdge)) {
-                // do not allow u-turns at virtual nodes, otherwise the route depends on whether or not there are
-                // virtual via nodes, see #1672. note since we are turning between virtual edges here we need to compare
-                // the *virtual* edge ids (the orig edge would always be the same for all virtual edges at a virtual
+                // do not allow u-turns at virtual nodes, otherwise the route depends on whether
+                // or not there are
+                // virtual via nodes, see #1672. note since we are turning between virtual edges
+                // here we need to compare
+                // the *virtual* edge ids (the orig edge would always be the same for all
+                // virtual edges at a virtual
                 // node), see #1593
                 return Double.POSITIVE_INFINITY;
             } else {
                 return 0;
             }
         }
-        // to calculate the actual turn costs or detect u-turns we need to look at the original edge of each virtual
+        return getMinWeightAndOriginalEdges(inEdge, viaNode, outEdge).minTurnWeight;
+    }
+
+    private Result getMinWeightAndOriginalEdges(int inEdge, int viaNode, int outEdge) {
+        // to calculate the actual turn costs or detect u-turns we need to look at the
+        // original edge of each virtual
         // edge, see #1593
-        if (isVirtualEdge(inEdge)) {
-            inEdge = getOriginalEdge(inEdge);
+        Result result = new Result();
+        if (isVirtualEdge(inEdge) && isVirtualEdge(outEdge)) {
+            EdgeExplorer innerExplorer = graph.createEdgeExplorer();
+            graph.forEdgeAndCopiesOfEdge(graph.createEdgeExplorer(), viaNode, getOriginalEdge(inEdge), p -> {
+                graph.forEdgeAndCopiesOfEdge(innerExplorer, viaNode, getOriginalEdge(outEdge), q -> {
+                    double w = weighting.calcTurnWeight(p, viaNode, q);
+                    if (w < result.minTurnWeight) {
+                        result.origInEdge = p;
+                        result.origOutEdge = q;
+                        result.minTurnWeight = w;
+                    }
+                });
+            });
+        } else if (isVirtualEdge(inEdge)) {
+            graph.forEdgeAndCopiesOfEdge(graph.createEdgeExplorer(), viaNode, getOriginalEdge(inEdge), e -> {
+                double w = weighting.calcTurnWeight(e, viaNode, outEdge);
+                if (w < result.minTurnWeight) {
+                    result.origInEdge = e;
+                    result.origOutEdge = outEdge;
+                    result.minTurnWeight = w;
+                }
+            });
+        } else if (isVirtualEdge(outEdge)) {
+            graph.forEdgeAndCopiesOfEdge(graph.createEdgeExplorer(), viaNode, getOriginalEdge(outEdge), e -> {
+                double w = weighting.calcTurnWeight(inEdge, viaNode, e);
+                if (w < result.minTurnWeight) {
+                    result.origInEdge = inEdge;
+                    result.origOutEdge = e;
+                    result.minTurnWeight = w;
+                }
+            });
+        } else {
+            result.origInEdge = inEdge;
+            result.origOutEdge = outEdge;
+            result.minTurnWeight = weighting.calcTurnWeight(inEdge, viaNode, outEdge);
         }
-        if (isVirtualEdge(outEdge)) {
-            outEdge = getOriginalEdge(outEdge);
-        }
-        return weighting.calcTurnWeight(inEdge, viaNode, outEdge);
+        return result;
     }
 
     private boolean isUTurn(int inEdge, int outEdge) {
@@ -92,18 +135,21 @@ public class QueryGraphWeighting extends ExtendedWeighting {
 
     @Override
     public long calcTurnMillis(int inEdge, int viaNode, int outEdge) {
-        // todo: here we do not allow calculating turn weights that aren't turn times, also see #1590
-        return (long) (1000 * calcTurnWeight(inEdge, viaNode, outEdge));
+        if (isVirtualNode(viaNode))
+            // see calcTurnWeight
+            return 0;
+        else {
+            // we want the turn time given by the actual weighting for the edges with
+            // minimum weight
+            // (the same ones that would be selected when routing)
+            Result result = getMinWeightAndOriginalEdges(inEdge, viaNode, outEdge);
+            return weighting.calcTurnMillis(result.origInEdge, viaNode, result.origOutEdge);
+        }
     }
 
     @Override
     public boolean hasTurnCosts() {
         return weighting.hasTurnCosts();
-    }
-
-    @Override
-    public FlagEncoder getFlagEncoder() {
-        return weighting.getFlagEncoder();
     }
 
     @Override
@@ -126,5 +172,11 @@ public class QueryGraphWeighting extends ExtendedWeighting {
 
     private boolean isVirtualEdge(int edge) {
         return edge >= firstVirtualEdgeId;
+    }
+
+    private static class Result {
+        int origInEdge = -1;
+        int origOutEdge = -1;
+        double minTurnWeight = Double.POSITIVE_INFINITY;
     }
 }

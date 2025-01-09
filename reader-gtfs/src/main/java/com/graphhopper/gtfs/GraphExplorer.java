@@ -20,18 +20,18 @@ package com.graphhopper.gtfs;
 
 import com.google.common.collect.Iterators;
 import com.google.transit.realtime.GtfsRealtime;
-import com.graphhopper.routing.ev.BooleanEncodedValue;
-import com.graphhopper.routing.util.AccessFilter;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
 import com.graphhopper.util.EdgeExplorer;
 import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.util.EdgeIteratorState;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Spliterators;
 import java.util.function.Consumer;
 
@@ -42,27 +42,25 @@ public final class GraphExplorer {
     private final RealtimeFeed realtimeFeed;
     private final boolean reverse;
     private final Weighting accessEgressWeighting;
-    private final BooleanEncodedValue accessEnc;
-    private final boolean walkOnly;
+    private final boolean streetOnly;
     private final boolean ptOnly;
     private final double walkSpeedKmH;
     private final boolean ignoreValidities;
     private final int blockedRouteTypes;
     private final PtGraph ptGraph;
+    private final Graph graph;
 
-    public GraphExplorer(Graph graph, PtGraph ptGraph, Weighting accessEgressWeighting, GtfsStorage gtfsStorage, RealtimeFeed realtimeFeed, boolean reverse, boolean walkOnly, boolean ptOnly, double walkSpeedKmh, boolean ignoreValidities, int blockedRouteTypes) {
+    public GraphExplorer(Graph graph, PtGraph ptGraph, Weighting accessEgressWeighting, GtfsStorage gtfsStorage, RealtimeFeed realtimeFeed, boolean reverse, boolean streetOnly, boolean ptOnly, double walkSpeedKmh, boolean ignoreValidities, int blockedRouteTypes) {
+        this.graph = graph;
         this.ptGraph = ptGraph;
         this.accessEgressWeighting = accessEgressWeighting;
-        this.accessEnc = accessEgressWeighting.getFlagEncoder().getAccessEnc();
         this.ignoreValidities = ignoreValidities;
         this.blockedRouteTypes = blockedRouteTypes;
-        AccessFilter accessEgressIn = AccessFilter.inEdges(accessEgressWeighting.getFlagEncoder().getAccessEnc());
-        AccessFilter accessEgressOut = AccessFilter.outEdges(accessEgressWeighting.getFlagEncoder().getAccessEnc());
-        this.edgeExplorer = graph.createEdgeExplorer(reverse ? accessEgressIn : accessEgressOut);
+        this.edgeExplorer = graph.createEdgeExplorer();
         this.gtfsStorage = gtfsStorage;
         this.realtimeFeed = realtimeFeed;
         this.reverse = reverse;
-        this.walkOnly = walkOnly;
+        this.streetOnly = streetOnly;
         this.ptOnly = ptOnly;
         this.walkSpeedKmH = walkSpeedKmh;
     }
@@ -107,14 +105,14 @@ public final class GraphExplorer {
                     // off the priority queue. Additionally, when only walking,
                     // don't bother finding the enterEdge, because we are not going to enter.
                     if (edgeType == GtfsStorage.EdgeType.ENTER_TIME_EXPANDED_NETWORK) {
-                        if (walkOnly) {
+                        if (streetOnly) {
                             return false;
                         } else {
                             action.accept(new MultiModalEdge(findEnterEdge(edge))); // fully consumes edgeIterator
                             return true;
                         }
                     }
-                    if (walkOnly && edgeType != (reverse ? GtfsStorage.EdgeType.EXIT_PT : GtfsStorage.EdgeType.ENTER_PT)) {
+                    if (streetOnly && edgeType != (reverse ? GtfsStorage.EdgeType.EXIT_PT : GtfsStorage.EdgeType.ENTER_PT)) {
                         continue;
                     }
                     if (!(ignoreValidities || isValidOn(edge, currentTime))) {
@@ -162,7 +160,7 @@ public final class GraphExplorer {
             @Override
             public boolean tryAdvance(Consumer<? super MultiModalEdge> action) {
                 while (e.next()) {
-                    if (reverse ? e.getReverse(accessEnc) : e.get(accessEnc)) {
+                    if (Double.isFinite(accessEgressWeighting.calcEdgeWeight(e, reverse))) {
                         action.accept(new MultiModalEdge(e.getEdge(), e.getBaseNode(), e.getAdjNode(), (long) (accessEgressWeighting.calcEdgeMillis(e.detach(false), reverse) * (5.0 / walkSpeedKmH)), e.getDistance()));
                         return true;
                     }
@@ -247,6 +245,17 @@ public final class GraphExplorer {
         }
     }
 
+    public List<Label.Transition> walkPath(int[] skippedEdgesForTransfer, long currentTime) {
+        EdgeIteratorState firstEdge = graph.getEdgeIteratorStateForKey(skippedEdgesForTransfer[0]);
+        Label label = new Label(currentTime, null, new Label.NodeId(firstEdge.getBaseNode(), -1), 0, null, 0, 0, 0, false, null);
+        for (int i : skippedEdgesForTransfer) {
+            EdgeIteratorState e = graph.getEdgeIteratorStateForKey(i);
+            MultiModalEdge multiModalEdge = new MultiModalEdge(e.getEdge(), e.getBaseNode(), e.getAdjNode(), (long) (accessEgressWeighting.calcEdgeMillis(e, reverse) * (5.0 / walkSpeedKmH)), e.getDistance());
+            label = new Label(label.currentTime + multiModalEdge.time, multiModalEdge, new Label.NodeId(e.getAdjNode(), -1), 0, null, 0, 0, 0, false, label);
+        }
+        return Label.getTransitions(label, false);
+    }
+
     public class MultiModalEdge {
         private int baseNode;
         private int adjNode;
@@ -281,11 +290,9 @@ public final class GraphExplorer {
 
         public Label.NodeId getAdjNode() {
             if (ptEdge != null) {
-                Integer streetNode = gtfsStorage.getPtToStreet().get(ptEdge.getAdjNode());
-                return new Label.NodeId(streetNode != null ? streetNode : -1, ptEdge.getAdjNode());
+                return new Label.NodeId(gtfsStorage.getPtToStreet().getOrDefault(ptEdge.getAdjNode(), -1), ptEdge.getAdjNode());
             } else {
-                Integer ptNode = gtfsStorage.getStreetToPt().get(adjNode);
-                return new Label.NodeId(adjNode, ptNode != null ? ptNode : -1);
+                return new Label.NodeId(adjNode, gtfsStorage.getStreetToPt().getOrDefault(adjNode, -1));
             }
         }
 
