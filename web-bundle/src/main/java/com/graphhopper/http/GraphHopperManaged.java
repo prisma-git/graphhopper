@@ -21,10 +21,6 @@ package com.graphhopper.http;
 import com.graphhopper.GraphHopper;
 import com.graphhopper.GraphHopperConfig;
 import com.graphhopper.gtfs.GraphHopperGtfs;
-import com.graphhopper.jackson.Jackson;
-import com.graphhopper.routing.weighting.custom.CustomProfile;
-import com.graphhopper.routing.weighting.custom.CustomWeighting;
-import com.graphhopper.util.CustomModel;
 
 import at.prismasolutions.graphhopper.extension.GHEventManager;
 import at.prismasolutions.graphhopper.extension.GraphHopperWithId;

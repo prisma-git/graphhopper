@@ -21,6 +21,10 @@ import com.graphhopper.routing.weighting.TurnCostProvider;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.util.CustomModel;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.PMap;
+
+import at.prismasolutions.graphhopper.extension.ExtendedWeighting;
+import at.prismasolutions.graphhopper.extension.GHEventMapper;
 
 import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
 
@@ -89,7 +93,7 @@ import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PR
  * the base vehicle always get assigned an infinite weight and this cannot be
  * changed (yet) using this weighting.
  */
-public final class CustomWeighting implements Weighting {
+public final class CustomWeighting extends ExtendedWeighting {
     public static final String NAME = "custom";
 
     /**
@@ -123,6 +127,19 @@ public final class CustomWeighting implements Weighting {
         this.distanceInfluence = parameters.getDistanceInfluence() / 1000.0;
         if (this.distanceInfluence < 0)
             throw new IllegalArgumentException("distance_influence cannot be negative " + this.distanceInfluence);
+    }
+
+    protected PMap hints;
+    protected GHEventMapper mapper;
+
+    @Override
+    public void setHints(PMap hints) {
+        this.hints = hints;
+    }
+
+    @Override
+    public void setGHEventMapper(GHEventMapper mapper) {
+        this.mapper = mapper;
     }
 
     @Override

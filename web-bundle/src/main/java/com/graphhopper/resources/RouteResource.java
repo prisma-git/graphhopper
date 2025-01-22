@@ -201,7 +201,7 @@ public class RouteResource {
         ObjectNode json = JsonNodeFactory.instance.objectNode();
         if (this.graphHopper instanceof GraphHopperWithId) {
             GraphHopperWithId idhopper = (GraphHopperWithId) this.graphHopper;
-            json.putPOJO("edges", idhopper.getGraphHopperStorage().getEdges());
+            json.putPOJO("edges", idhopper.getBaseGraph().getEdges());
             json.putPOJO("events", idhopper.getManager().getMapper().getEvents());
 
             Integer[] mapping = idhopper.getManager().getMapper().getMapping();

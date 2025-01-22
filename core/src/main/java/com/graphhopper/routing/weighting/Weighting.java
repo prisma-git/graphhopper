@@ -17,9 +17,6 @@
  */
 package com.graphhopper.routing.weighting;
 
-import com.graphhopper.GHRequest;
-import com.graphhopper.routing.ev.BooleanEncodedValue;
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.util.EdgeIteratorState;
 import com.graphhopper.util.PMap;
 
@@ -81,14 +78,6 @@ public interface Weighting {
     boolean hasTurnCosts();
 
     String getName();
-
-    default double calcEdgeWeightWithAccess(EdgeIteratorState edgeState, boolean reverse) {
-        BooleanEncodedValue accessEnc = getFlagEncoder().getAccessEnc();
-        if ((!reverse && !edgeState.get(accessEnc)) || (reverse && !edgeState.getReverse(accessEnc))) {
-            return Double.POSITIVE_INFINITY;
-        }
-        return calcEdgeWeight(edgeState, reverse);
-    }
 
     // Extension
     void setHints(PMap hints);

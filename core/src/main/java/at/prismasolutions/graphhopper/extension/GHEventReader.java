@@ -30,36 +30,36 @@ public class GHEventReader {
 				if (jParser.getCurrentToken() == JsonToken.START_OBJECT) {
 					GHEvent event = new GHEvent();
 					while (jParser.nextToken() != JsonToken.END_OBJECT) {
-						String eventfieldname = jParser.getCurrentName();
+						String eventfieldname = jParser.currentName();
 						if ("type".equals(eventfieldname)) {
 							int type = jParser.nextIntValue(0);
 							switch (type) {
-							case 0:
-								event.setType(GHEventType.ALL);
-								break;
-							case 1:
-								event.setType(GHEventType.DESCRIPTION);
-								break;
-							case 2:
-								event.setType(GHEventType.EQUAL);
-								break;
-							case 3:
-								event.setType(GHEventType.LESSERTHAN);
-								break;
-							case 4:
-								event.setType(GHEventType.GREATERTHAN);
-								break;
+								case 0:
+									event.setType(GHEventType.ALL);
+									break;
+								case 1:
+									event.setType(GHEventType.DESCRIPTION);
+									break;
+								case 2:
+									event.setType(GHEventType.EQUAL);
+									break;
+								case 3:
+									event.setType(GHEventType.LESSERTHAN);
+									break;
+								case 4:
+									event.setType(GHEventType.GREATERTHAN);
+									break;
 							}
 						}
 						if ("startDate".equals(eventfieldname)) {
-							if (jParser.getCurrentValue() != null) {
+							if (jParser.currentValue() != null) {
 								String date = jParser.nextTextValue();
 								OffsetDateTime temp = OffsetDateTime.parse(date, DateTimeFormatter.ISO_DATE_TIME);
 								event.setStartDate(Instant.from(temp));
 							}
 						}
 						if ("endDate".equals(eventfieldname)) {
-							if (jParser.getCurrentValue() != null) {
+							if (jParser.currentValue() != null) {
 								String date = jParser.nextTextValue();
 								OffsetDateTime temp = OffsetDateTime.parse(date, DateTimeFormatter.ISO_DATE_TIME);
 								event.setEndDate(Instant.from(temp));

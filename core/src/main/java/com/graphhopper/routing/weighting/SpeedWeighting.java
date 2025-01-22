@@ -22,19 +22,38 @@ import com.graphhopper.routing.ev.DecimalEncodedValue;
 import com.graphhopper.storage.TurnCostStorage;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.PMap;
+
+import at.prismasolutions.graphhopper.extension.GHEventMapper;
 
 public class SpeedWeighting implements Weighting {
     private final DecimalEncodedValue speedEnc;
     private final TurnCostProvider turnCostProvider;
 
+    protected PMap hints;
+    protected GHEventMapper mapper;
+
+    @Override
+    public void setHints(PMap hints) {
+        this.hints = hints;
+    }
+
+    @Override
+    public void setGHEventMapper(GHEventMapper mapper) {
+        this.mapper = mapper;
+    }
+
     public SpeedWeighting(DecimalEncodedValue speedEnc) {
         this(speedEnc, TurnCostProvider.NO_TURN_COST_PROVIDER);
     }
 
-    public SpeedWeighting(DecimalEncodedValue speedEnc, DecimalEncodedValue turnCostEnc, TurnCostStorage turnCostStorage, double uTurnCosts) {
+    public SpeedWeighting(DecimalEncodedValue speedEnc, DecimalEncodedValue turnCostEnc,
+            TurnCostStorage turnCostStorage, double uTurnCosts) {
         if (turnCostStorage == null || turnCostEnc == null)
-            throw new IllegalArgumentException("This SpeedWeighting constructor expects turnCostEnc and turnCostStorage to be != null");
-        if (uTurnCosts < 0) throw new IllegalArgumentException("u-turn costs must be positive");
+            throw new IllegalArgumentException(
+                    "This SpeedWeighting constructor expects turnCostEnc and turnCostStorage to be != null");
+        if (uTurnCosts < 0)
+            throw new IllegalArgumentException("u-turn costs must be positive");
         this.speedEnc = speedEnc;
         this.turnCostProvider = new TurnCostProvider() {
             @Override
@@ -67,7 +86,8 @@ public class SpeedWeighting implements Weighting {
     @Override
     public double calcEdgeWeight(EdgeIteratorState edgeState, boolean reverse) {
         double speed = reverse ? edgeState.getReverse(speedEnc) : edgeState.get(speedEnc);
-        if (speed == 0) return Double.POSITIVE_INFINITY;
+        if (speed == 0)
+            return Double.POSITIVE_INFINITY;
         return edgeState.getDistance() / speed;
     }
 

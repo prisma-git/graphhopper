@@ -20,6 +20,9 @@ package com.graphhopper.routing.weighting.custom;
 import com.graphhopper.routing.weighting.TurnCostProvider;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.PMap;
+
+import at.prismasolutions.graphhopper.extension.GHEventMapper;
 
 import static com.graphhopper.routing.weighting.TurnCostProvider.NO_TURN_COST_PROVIDER;
 
@@ -29,6 +32,8 @@ public class CustomWeighting2 implements Weighting {
     private final CustomWeighting.EdgeToDoubleMapping edgeToSpeedMapping;
     private final CustomWeighting.EdgeToDoubleMapping edgeToPriorityMapping;
     private final TurnCostProvider turnCostProvider;
+    protected PMap hints;
+    protected GHEventMapper mapper;
 
     public CustomWeighting2(TurnCostProvider turnCostProvider, CustomWeighting.Parameters parameters) {
         if (!Weighting.isValidName(getName()))
@@ -37,6 +42,16 @@ public class CustomWeighting2 implements Weighting {
         this.edgeToSpeedMapping = parameters.getEdgeToSpeedMapping();
         this.edgeToPriorityMapping = parameters.getEdgeToPriorityMapping();
         this.distanceInfluence = parameters.getDistanceInfluence();
+    }
+
+    @Override
+    public void setHints(PMap hints) {
+        this.hints = hints;
+    }
+
+    @Override
+    public void setGHEventMapper(GHEventMapper mapper) {
+        this.mapper = mapper;
     }
 
     @Override
@@ -57,7 +72,8 @@ public class CustomWeighting2 implements Weighting {
     @Override
     public long calcEdgeMillis(EdgeIteratorState edgeState, boolean reverse) {
         double speed = edgeToSpeedMapping.get(edgeState, reverse);
-        if (speed == 0) return Long.MAX_VALUE;
+        if (speed == 0)
+            return Long.MAX_VALUE;
         return Math.round(edgeState.getDistance() * 1000 / speed * 3.6);
     }
 

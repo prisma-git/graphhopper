@@ -14,7 +14,6 @@ public class GHEventMapper {
 	private GHEvent[] events;
 	private Integer[] mapping;
 	private List<GHEvent> allEvents;
-	
 
 	private GHEventReader reader = new GHEventReader();
 
@@ -23,14 +22,12 @@ public class GHEventMapper {
 	private Lock readLock = lock.readLock();
 
 	private final static org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(GHEventMapper.class);
-	
+
 	public GHEventMapper(GraphHopperWithId hopper) {
 		this.hopper = hopper;
-		this.mapping = new Integer[this.hopper.getGraphHopperStorage().getEdges()];
+		this.mapping = new Integer[this.hopper.getBaseGraph().getEdges()];
 	}
-	
-	
-	
+
 	public GHEvent[] getEvents() {
 		return events;
 	}
@@ -39,13 +36,9 @@ public class GHEventMapper {
 		return mapping;
 	}
 
-
-
 	public List<GHEvent> getAllEvents() {
 		return allEvents;
 	}
-
-
 
 	public List<GHEvent> getGHEvents(int edgeId) {
 		readLock.lock();
@@ -72,7 +65,7 @@ public class GHEventMapper {
 		for (File file : files) {
 			newEvents.addAll(this.reader.read(file));
 		}
-		
+
 		this.createMapping(newEvents);
 	}
 
@@ -89,7 +82,7 @@ public class GHEventMapper {
 		int currentIndex = 0;
 
 		for (int i = 0; i < this.mapping.length; i++) {
-			Long wayId = hopper.getWay(i);
+			Integer wayId = hopper.getWay(i);
 			if (map.containsKey(wayId.toString())) {
 				mappingArr[i] = currentIndex;
 				for (GHEvent ev : map.get(wayId.toString())) {
