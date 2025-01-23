@@ -202,17 +202,19 @@ public class RouteResource {
         if (this.graphHopper instanceof GraphHopperWithId) {
             GraphHopperWithId idhopper = (GraphHopperWithId) this.graphHopper;
             json.putPOJO("edges", idhopper.getBaseGraph().getEdges());
-            json.putPOJO("events", idhopper.getManager().getMapper().getEvents());
+            if (idhopper.getManager() != null) {
+                json.putPOJO("events", idhopper.getManager().getMapper().getEvents());
 
-            Integer[] mapping = idhopper.getManager().getMapper().getMapping();
-            Map<Integer, Integer> map = new HashMap<Integer, Integer>();
-            for (int i = 0; i < mapping.length; i++) {
-                if (mapping[i] != null) {
-                    map.put(i, mapping[i]);
+                Integer[] mapping = idhopper.getManager().getMapper().getMapping();
+                Map<Integer, Integer> map = new HashMap<Integer, Integer>();
+                for (int i = 0; i < mapping.length; i++) {
+                    if (mapping[i] != null) {
+                        map.put(i, mapping[i]);
+                    }
                 }
+                json.putPOJO("mapping", map);
+                json.putPOJO("allEvents", idhopper.getManager().getMapper().getAllEvents());
             }
-            json.putPOJO("mapping", map);
-            json.putPOJO("allEvents", idhopper.getManager().getMapper().getAllEvents());
         }
         return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
     }
@@ -232,17 +234,18 @@ public class RouteResource {
                         osmDetail.setFirst(id.getFirst());
                         osmDetail.setLast(id.getLast());
                         osmIds.add(osmDetail);
-
-                        List<GHEvent> events = idhopper.getManager().getMapper().getGHEvents((int) id.getValue());
-                        if (events != null && !events.isEmpty()) {
-                            ArrayNode node = JsonNodeFactory.instance.arrayNode();
-                            for (GHEvent ev : events) {
-                                node.addPOJO(ev);
+                        if (idhopper.getManager() != null && idhopper.getManager().getMapper() != null) {
+                            List<GHEvent> events = idhopper.getManager().getMapper().getGHEvents((int) id.getValue());
+                            if (events != null && !events.isEmpty()) {
+                                ArrayNode node = JsonNodeFactory.instance.arrayNode();
+                                for (GHEvent ev : events) {
+                                    node.addPOJO(ev);
+                                }
+                                PathDetail eventDetail = new PathDetail(node);
+                                eventDetail.setFirst(id.getFirst());
+                                eventDetail.setLast(id.getLast());
+                                ghEvents.add(eventDetail);
                             }
-                            PathDetail eventDetail = new PathDetail(node);
-                            eventDetail.setFirst(id.getFirst());
-                            eventDetail.setLast(id.getLast());
-                            ghEvents.add(eventDetail);
                         }
                     }
                     path.getPathDetails().put("osmIds", osmIds);

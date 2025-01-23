@@ -122,7 +122,7 @@ public class DefaultWeightingFactory implements WeightingFactory {
             throw new IllegalArgumentException("Weighting '" + weightingStr + "' not supported");
         // Extension
         weighting.setHints(hints);
-        if (this.manager != null) {
+        if (this.manager != null && this.manager.getMapper() != null) {
             weighting.setGHEventMapper(manager.getMapper());
         }
         // Extension
