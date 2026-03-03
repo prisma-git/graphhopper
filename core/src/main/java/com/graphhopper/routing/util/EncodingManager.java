@@ -229,6 +229,11 @@ public class EncodingManager implements EncodedValueLookup {
     public IntEncodedValue getIntEncodedValue(String key) {
         return getEncodedValue(key, IntEncodedValue.class);
     }
+    
+    @Override
+    public LongEncodedValue getLongEncodedValue(String key) {
+        return getEncodedValue(key, LongEncodedValue.class);
+    }
 
     @Override
     public DecimalEncodedValue getDecimalEncodedValue(String key) {

@@ -27,8 +27,8 @@ public class GraphHopperWithId extends GraphHopper {
 		return fact;
 	}
 
-	public int getWay(int internalEdgeId) {
-		return this.getEncodingManager().getIntEncodedValue(OSMWayID.KEY).getInt(false, internalEdgeId,
+	public long getWay(int internalEdgeId) {
+		return this.getEncodingManager().getLongEncodedValue(OSMWayID.KEY).getLong(false, internalEdgeId,
 				this.getBaseGraph().getEdgeAccess());
 	}
 

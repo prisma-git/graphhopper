@@ -173,7 +173,7 @@ public class DefaultImportRegistry implements ImportRegistry {
         else if (OSMWayID.KEY.equals(name))
             return ImportUnit.create(name, props -> OSMWayID.create(),
                     (lookup, props) -> new OSMWayIDParser(
-                            lookup.getIntEncodedValue(OSMWayID.KEY))
+                            lookup.getLongEncodedValue(OSMWayID.KEY))
             );
         else if (MtbRating.KEY.equals(name))
             return ImportUnit.create(name, props -> MtbRating.create(),

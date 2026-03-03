@@ -36,4 +36,6 @@ public interface EncodedValueLookup {
     StringEncodedValue getStringEncodedValue(String key);
 
     boolean hasEncodedValue(String key);
+
+	LongEncodedValue getLongEncodedValue(String key);
 }

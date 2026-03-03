@@ -21,7 +21,7 @@ package com.graphhopper.routing.ev;
 public class OSMWayID {
     public static final String KEY = "osm_way_id";
 
-    public static IntEncodedValue create() {
-        return new IntEncodedValueImpl(KEY, 31, false);
+    public static LongEncodedValue create() {
+        return new LongEncodedValueImpl(KEY, 63, false);
     }
 }

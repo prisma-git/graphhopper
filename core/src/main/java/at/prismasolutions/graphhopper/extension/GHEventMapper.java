@@ -82,7 +82,7 @@ public class GHEventMapper {
 		int currentIndex = 0;
 
 		for (int i = 0; i < this.mapping.length; i++) {
-			Integer wayId = hopper.getWay(i);
+			Long wayId = hopper.getWay(i);
 			if (map.containsKey(wayId.toString())) {
 				mappingArr[i] = currentIndex;
 				for (GHEvent ev : map.get(wayId.toString())) {
