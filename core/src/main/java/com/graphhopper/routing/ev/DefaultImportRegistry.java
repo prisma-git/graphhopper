@@ -22,6 +22,11 @@ import com.graphhopper.routing.util.*;
 import com.graphhopper.routing.util.parsers.*;
 import com.graphhopper.util.PMap;
 
+import at.prismasolutions.graphhopper.extension.routing.ev.Fuehrung;
+import at.prismasolutions.graphhopper.extension.routing.ev.ObjArt;
+import at.prismasolutions.graphhopper.extension.routing.util.parsers.FuehrungParser;
+import at.prismasolutions.graphhopper.extension.routing.util.parsers.ObjArtParser;
+
 public class DefaultImportRegistry implements ImportRegistry {
     @Override
     public ImportUnit createImportUnit(String name) {
@@ -346,6 +351,16 @@ public class DefaultImportRegistry implements ImportRegistry {
             return ImportUnit.create(name, props -> VehiclePriority.create("mtb", 4, PriorityCode.getFactor(1), false),
                     (lookup, props) -> new MountainBikePriorityParser(lookup),
                     VehicleSpeed.key("mtb"), BikeNetwork.KEY
+            );
+        else if (Fuehrung.KEY.equals(name))
+            return ImportUnit.create(name, props -> Fuehrung.create(),
+                    (lookup, props) -> new FuehrungParser(
+                            lookup.getIntEncodedValue(Fuehrung.KEY))
+            );
+        else if (ObjArt.KEY.equals(name))
+            return ImportUnit.create(name, props -> ObjArt.create(),
+                    (lookup, props) -> new ObjArtParser(
+                            lookup.getIntEncodedValue(ObjArt.KEY))
             );
         return null;
     }
