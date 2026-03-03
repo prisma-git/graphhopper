@@ -36,7 +36,7 @@ public class OSMWayIDParser implements TagParser {
             throw new IllegalArgumentException("Cannot store OSM way ID: " + way.getId() + " as it is too large (> "
                     + osmWayIdEnc.getMaxStorableLong() + "). You can disable " + osmWayIdEnc.getName() + " if you do not " +
                     "need to store the OSM way IDs");
-        int wayId = Math.toIntExact(way.getId());
+        long wayId = way.getId();
         osmWayIdEnc.setLong(false, edgeId, edgeIntAccess, wayId);
     }
 }
