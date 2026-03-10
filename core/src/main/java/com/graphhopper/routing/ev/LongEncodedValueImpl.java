@@ -105,9 +105,9 @@ public class LongEncodedValueImpl implements LongEncodedValue {
     @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
     LongEncodedValueImpl(@JsonProperty("name") String name,
                         @JsonProperty("bits") int bits,
-                        @JsonProperty("min_storable_value") int minStorableValue,
-                        @JsonProperty("max_storable_value") int maxStorableValue,
-                        @JsonProperty("max_value") int maxValue,
+                        @JsonProperty("min_storable_value") long minStorableValue,
+                        @JsonProperty("max_storable_value") long maxStorableValue,
+                        @JsonProperty("max_value") long maxValue,
                         @JsonProperty("negate_reverse_direction") boolean negateReverseDirection,
                         @JsonProperty("store_two_directions") boolean storeTwoDirections,
                         @JsonProperty("fwd_data_index") int fwdDataIndex,
@@ -137,6 +137,13 @@ public class LongEncodedValueImpl implements LongEncodedValue {
         this.bwdShift = bwdShift;
         this.fwdMask = fwdMask;
         this.bwdMask = bwdMask;
+        this.fwdDataIndex2 = fwdDataIndex2;
+        this.bwdDataIndex2 = bwdDataIndex2;
+        this.fwdShift2 = fwdShift2;
+        this.bwdShift2 = bwdShift2;
+        this.fwdMask2 = fwdMask2;
+        this.bwdMask2 = bwdMask2;
+
     }
 
     @Override
