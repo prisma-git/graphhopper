@@ -219,6 +219,37 @@ public class VirtualEdgeIteratorState implements EdgeIteratorState {
         property.setInt(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);
         return this;
     }
+    
+	@Override
+	public long get(LongEncodedValue property) {
+		return property.getLong(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);
+	}
+
+	@Override
+	public EdgeIteratorState set(LongEncodedValue property, long value) {
+		property.setLong(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);
+        return this;
+	}
+
+	@Override
+	public long getReverse(LongEncodedValue property) {
+		 return property.getLong(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess);
+	}
+
+	@Override
+	public EdgeIteratorState setReverse(LongEncodedValue property, long value) {
+		 property.setLong(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, value);
+	        return this;
+	}
+
+	@Override
+	public EdgeIteratorState set(LongEncodedValue property, long fwd, long bwd) {
+		if (!property.isStoreTwoDirections())
+            throw new IllegalArgumentException("EncodedValue " + property.getName() + " supports only one direction");
+        property.setLong(reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, fwd);
+        property.setLong(!reverse, GHUtility.getEdgeFromEdgeKey(originalEdgeKey), edgeIntAccess, bwd);
+        return this;
+	}
 
     @Override
     public double get(DecimalEncodedValue property) {
@@ -375,5 +406,7 @@ public class VirtualEdgeIteratorState implements EdgeIteratorState {
     public void setReverseEdge(EdgeIteratorState reverseEdge) {
         this.reverseEdge = reverseEdge;
     }
+
+
 
 }

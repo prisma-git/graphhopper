@@ -892,13 +892,43 @@ public class BaseGraph implements Graph, Closeable {
             property.setInt(!reverse, edgeId, edgeIntAccess, value);
             return this;
         }
-
+        
         @Override
         public EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd) {
             if (!property.isStoreTwoDirections())
                 throw new IllegalArgumentException("EncodedValue " + property.getName() + " supports only one direction");
             property.setInt(reverse, edgeId, edgeIntAccess, fwd);
             property.setInt(!reverse, edgeId, edgeIntAccess, bwd);
+            return this;
+        }
+        
+        @Override
+		public long get(LongEncodedValue property) {
+        	return property.getLong(reverse, edgeId, edgeIntAccess);
+		}
+
+		@Override
+		public EdgeIteratorState set(LongEncodedValue property, long value) {
+			 property.setLong(reverse, edgeId, edgeIntAccess, value);
+	         return this;
+		}
+
+		@Override
+		public long getReverse(LongEncodedValue property) {
+			return property.getLong(!reverse, edgeId, edgeIntAccess);
+		}
+		@Override
+        public EdgeIteratorState setReverse(LongEncodedValue property, long value) {
+            property.setLong(!reverse, edgeId, edgeIntAccess, value);
+            return this;
+        }
+
+        @Override
+        public EdgeIteratorState set(LongEncodedValue property, long fwd, long bwd) {
+            if (!property.isStoreTwoDirections())
+                throw new IllegalArgumentException("EncodedValue " + property.getName() + " supports only one direction");
+            property.setLong(reverse, edgeId, edgeIntAccess, fwd);
+            property.setLong(!reverse, edgeId, edgeIntAccess, bwd);
             return this;
         }
 
@@ -1072,5 +1102,7 @@ public class BaseGraph implements Graph, Closeable {
         public final String toString() {
             return getEdge() + " " + getBaseNode() + "-" + getAdjNode();
         }
+
+		
     }
 }

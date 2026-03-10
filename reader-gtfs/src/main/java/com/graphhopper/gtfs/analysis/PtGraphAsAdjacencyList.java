@@ -222,6 +222,30 @@ class PtGraphAsAdjacencyList implements Graph {
             public EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd) {
                 throw new RuntimeException();
             }
+            @Override
+			public long get(LongEncodedValue property) {
+            	throw new RuntimeException();
+			}
+
+			@Override
+			public EdgeIteratorState set(LongEncodedValue property, long value) {
+				throw new RuntimeException();
+			}
+
+			@Override
+			public long getReverse(LongEncodedValue property) {
+				throw new RuntimeException();
+			}
+
+			@Override
+			public EdgeIteratorState setReverse(LongEncodedValue property, long value) {
+				throw new RuntimeException();
+			}
+
+			@Override
+			public EdgeIteratorState set(LongEncodedValue property, long fwd, long bwd) {
+				throw new RuntimeException();
+			}
 
             @Override
             public double get(DecimalEncodedValue property) {
@@ -327,6 +351,8 @@ class PtGraphAsAdjacencyList implements Graph {
             public EdgeIteratorState copyPropertiesFrom(EdgeIteratorState e) {
                 throw new RuntimeException();
             }
+
+			
         }
     }
 }

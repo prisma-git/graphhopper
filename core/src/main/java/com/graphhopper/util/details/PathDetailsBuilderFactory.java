@@ -94,6 +94,8 @@ public class PathDetailsBuilderFactory {
                 builders.add(new StringDetails(pathDetail, (StringEncodedValue) ev));
             else if (ev instanceof IntEncodedValue)
                 builders.add(new IntDetails(pathDetail, (IntEncodedValue) ev));
+            else if (ev instanceof LongEncodedValue)
+                builders.add(new LongDetails(pathDetail, (LongEncodedValue) ev));
             else
                 throw new IllegalArgumentException("unknown EncodedValue class " + ev.getClass().getName());
         }

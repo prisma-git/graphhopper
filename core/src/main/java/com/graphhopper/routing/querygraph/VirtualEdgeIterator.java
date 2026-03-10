@@ -175,6 +175,34 @@ class VirtualEdgeIterator implements EdgeIterator {
         getCurrentEdge().set(property, fwd, bwd);
         return this;
     }
+    
+	@Override
+	public long get(LongEncodedValue property) {
+		return getCurrentEdge().get(property);
+	}
+
+	@Override
+	public EdgeIteratorState set(LongEncodedValue property, long value) {
+		getCurrentEdge().set(property, value);
+        return this;
+	}
+
+	@Override
+	public long getReverse(LongEncodedValue property) {
+		return getCurrentEdge().getReverse(property);        
+	}
+
+	@Override
+	public EdgeIteratorState setReverse(LongEncodedValue property, long value) {
+		getCurrentEdge().setReverse(property, value);
+        return this;
+	}
+
+	@Override
+	public EdgeIteratorState set(LongEncodedValue property, long fwd, long bwd) {
+		 getCurrentEdge().set(property, fwd, bwd);
+	     return this;
+	}
 
     @Override
     public EdgeIteratorState set(DecimalEncodedValue property, double value) {
@@ -298,4 +326,6 @@ class VirtualEdgeIterator implements EdgeIterator {
     public List<EdgeIteratorState> getEdges() {
         return edges;
     }
+
+
 }

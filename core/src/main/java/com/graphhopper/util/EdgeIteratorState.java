@@ -185,10 +185,20 @@ public interface EdgeIteratorState {
     EdgeIteratorState set(IntEncodedValue property, int value);
 
     int getReverse(IntEncodedValue property);
-
+    
     EdgeIteratorState setReverse(IntEncodedValue property, int value);
 
     EdgeIteratorState set(IntEncodedValue property, int fwd, int bwd);
+    
+    long get(LongEncodedValue property);
+
+    EdgeIteratorState set(LongEncodedValue property, long value);
+
+    long getReverse(LongEncodedValue property);
+
+    EdgeIteratorState setReverse(LongEncodedValue property, long value);
+
+    EdgeIteratorState set(LongEncodedValue property, long fwd, long bwd);
 
     double get(DecimalEncodedValue property);
 
