@@ -208,6 +208,9 @@ public class SPTResource {
                         } else if (ev instanceof IntEncodedValue) {
                             IntEncodedValue eev = (IntEncodedValue) ev;
                             sb.append(reverseFlow ? edge.getReverse(eev) : edge.get(eev));
+                        }else if (ev instanceof LongEncodedValue) {
+                        	LongEncodedValue eev = (LongEncodedValue) ev;
+                            sb.append(reverseFlow ? edge.getReverse(eev) : edge.get(eev));
                         } else {
                             throw new IllegalArgumentException("Unknown property " + col);
                         }

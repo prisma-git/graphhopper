@@ -114,7 +114,7 @@ public class InfoResource {
             } else if (encodedValue instanceof BooleanEncodedValue) {
                 possibleValueList.add("true");
                 possibleValueList.add("false");
-            } else if (encodedValue instanceof DecimalEncodedValue || encodedValue instanceof IntEncodedValue) {
+            } else if (encodedValue instanceof DecimalEncodedValue || encodedValue instanceof IntEncodedValue || encodedValue instanceof LongEncodedValue) {
                 possibleValueList.add(">number");
                 possibleValueList.add("<number");
             } else {
