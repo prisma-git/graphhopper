@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,18 +53,10 @@ public class GHEventReader {
 							}
 						}
 						if ("startDate".equals(eventfieldname)) {
-							if (jParser.currentValue() != null) {
-								String date = jParser.nextTextValue();
-								OffsetDateTime temp = OffsetDateTime.parse(date, DateTimeFormatter.ISO_DATE_TIME);
-								event.setStartDate(Instant.from(temp));
-							}
+							event.setStartDate(parseDate(jParser));
 						}
 						if ("endDate".equals(eventfieldname)) {
-							if (jParser.currentValue() != null) {
-								String date = jParser.nextTextValue();
-								OffsetDateTime temp = OffsetDateTime.parse(date, DateTimeFormatter.ISO_DATE_TIME);
-								event.setEndDate(Instant.from(temp));
-							}
+							event.setEndDate(parseDate(jParser));
 						}
 						if ("direction".equals(eventfieldname)) {
 							int val = jParser.nextIntValue(2);
@@ -127,6 +120,46 @@ public class GHEventReader {
 		}
 		return list;
 
+	}
+
+	/**
+	 * Reads the value of the current date field and converts it to an {@link Instant}.
+	 * <p>
+	 * Accepts an ISO-8601 date-time string (e.g. {@code 2022-02-02T14:25:34+02:00}) as
+	 * well as a numeric unix timestamp (auto-detected as seconds or milliseconds) or a
+	 * numeric string. Returns {@code null} for a JSON {@code null} or an unparseable value.
+	 * <p>
+	 * Note: this advances the parser onto the value token, mirroring the behaviour of the
+	 * {@code nextTextValue()}/{@code nextIntValue()} calls used for the other fields.
+	 */
+	private Instant parseDate(JsonParser jParser) throws IOException {
+		JsonToken token = jParser.nextToken();
+		if (token == null || token == JsonToken.VALUE_NULL) {
+			return null;
+		}
+		if (token.isNumeric()) {
+			return fromEpoch(jParser.getLongValue());
+		}
+		String text = jParser.getValueAsString();
+		if (text == null || text.trim().isEmpty()) {
+			return null;
+		}
+		text = text.trim();
+		try {
+			return Instant.from(OffsetDateTime.parse(text, DateTimeFormatter.ISO_DATE_TIME));
+		} catch (DateTimeParseException e) {
+			try {
+				return fromEpoch(Long.parseLong(text));
+			} catch (NumberFormatException nfe) {
+				logger.warn("Ignoring unparseable GHEvent date: {}", text);
+				return null;
+			}
+		}
+	}
+
+	/** Interpret an epoch value as milliseconds when it is clearly too large to be seconds. */
+	private Instant fromEpoch(long epoch) {
+		return Math.abs(epoch) >= 100_000_000_000L ? Instant.ofEpochMilli(epoch) : Instant.ofEpochSecond(epoch);
 	}
 
 }

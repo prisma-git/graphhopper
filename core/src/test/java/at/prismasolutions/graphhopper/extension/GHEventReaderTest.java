@@ -1,8 +1,11 @@
 package at.prismasolutions.graphhopper.extension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
@@ -52,6 +55,13 @@ public class GHEventReaderTest {
 
 		assertEquals(1.5, event1.getFactor());
 		assertEquals(-1, event2.getFactor());
+
+		// ISO-8601 dates are parsed into Instants ...
+		assertEquals(Instant.from(OffsetDateTime.parse("2022-02-02T14:25:34+02:00")), event1.getStartDate());
+		assertEquals(Instant.from(OffsetDateTime.parse("2022-02-14T14:25:34+02:00")), event1.getEndDate());
+		// ... and a JSON null leaves the date unset.
+		assertNull(event2.getStartDate());
+		assertNull(event2.getEndDate());
 	}
 
 	@Test

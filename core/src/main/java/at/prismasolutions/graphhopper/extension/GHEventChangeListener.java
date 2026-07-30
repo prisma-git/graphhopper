@@ -34,7 +34,7 @@ public class GHEventChangeListener extends TimerTask {
 		boolean changed = false;
 		if (matchingFiles != null) {
 			for (File file : matchingFiles) {
-				long lastTimeStamp = this.timeStamps.getOrDefault(matchingFiles, 0l);
+				long lastTimeStamp = this.timeStamps.getOrDefault(file.getAbsolutePath(), 0l);
 				long currentTimeStamp = file.lastModified();
 				if (currentTimeStamp != lastTimeStamp) {
 					this.timeStamps.put(file.getAbsolutePath(), currentTimeStamp);
