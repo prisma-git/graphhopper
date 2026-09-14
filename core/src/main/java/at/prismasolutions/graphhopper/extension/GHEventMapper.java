@@ -43,6 +43,11 @@ public class GHEventMapper {
 	public List<GHEvent> getGHEvents(int edgeId) {
 		readLock.lock();
 		try {
+			// Virtual edges (created on the query graph at snap points) have ids >= the base
+			// graph edge count and are not in the mapping array; they carry no GHEvents.
+			if (edgeId < 0 || edgeId >= mapping.length) {
+				return null;
+			}
 			Integer index = mapping[edgeId];
 			if (index == null) {
 				return null;
