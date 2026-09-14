@@ -2,6 +2,9 @@ package at.prismasolutions.graphhopper.extension;
 
 import java.time.Instant;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 public class GHEvent {
 	private GHEventType type;
 	
@@ -26,12 +29,17 @@ public class GHEvent {
 	public void setType(GHEventType type) {
 		this.type = type;
 	}
+	// Serialize as ISO-8601 string; the response ObjectMapper has no java.time
+	// (jsr310) module, so a raw Instant would fail to serialize. Keeps the Instant
+	// return type used by ExtendedWeighting.isEventApplicable.
+	@JsonSerialize(using = ToStringSerializer.class)
 	public Instant getStartDate() {
 		return startDate;
 	}
 	public void setStartDate(Instant startDate) {
 		this.startDate = startDate;
 	}
+	@JsonSerialize(using = ToStringSerializer.class)
 	public Instant getEndDate() {
 		return endDate;
 	}
