@@ -1,0 +1,25 @@
+[
+    {
+      "type": 0,
+      "startDate": null,
+      "endDate": null,
+      "direction": 2,
+      "statFrom": 0,
+      "statTo": 1,
+      "caption": "numeric extEdgeId, object-valued shape and unknown structured fields",
+      "extType": "foo",
+      "extId": "bar",
+      "extEdgeId": 12620747,
+      "shape": { "type": "LineString", "coordinates": [[9, 52], [9.4, 51.2]] },
+      "unknownObject": { "a": 1, "nested": { "b": 2 } },
+      "unknownArray": [1, 2, 3],
+      "factor": -1
+    },
+    {
+      "type": 0,
+      "direction": 2,
+      "caption": "still parsed after the structured fields above",
+      "extEdgeId": "11",
+      "factor": 1.5
+    }
+]

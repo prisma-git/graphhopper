@@ -26,6 +26,7 @@ public class GHEventReaderTest {
 	private static final String testOsm = "./src/test/resources/com/graphhopper/reader/osm/test-osm.xml";
 	private static final String testEventsPath = "./src/test/resources/com/graphhopper/reader/GHEvent/";
 	private static final String testEvents = testEventsPath + "ghevents.json";
+	private static final String testEventsRobust = testEventsPath + "ghevents-robust.json";
 	private GraphHopper instance;
 
 	@BeforeEach
@@ -62,6 +63,29 @@ public class GHEventReaderTest {
 		// ... and a JSON null leaves the date unset.
 		assertNull(event2.getStartDate());
 		assertNull(event2.getEndDate());
+	}
+
+	@Test
+	public void testReadRobust() {
+		// A numeric extEdgeId, an object-valued "shape" and unknown object/array fields
+		// must not break parsing: the numeric id is normalised to its string key and the
+		// structured values are skipped whole so every event is still read.
+		GHEventReader reader = new GHEventReader();
+		List<GHEvent> events = reader.read(new File(testEventsRobust));
+		assertEquals(2, events.size());
+
+		GHEvent event1 = events.get(0);
+		GHEvent event2 = events.get(1);
+
+		// numeric extEdgeId is accepted and matches the Long.toString key used for mapping
+		assertEquals("12620747", event1.getExtEdgeId());
+		assertEquals(-1, event1.getFactor());
+		// object-valued shape is skipped, not stored as a broken string
+		assertNull(event1.getShape());
+
+		// the event after the structured fields is still parsed intact
+		assertEquals("11", event2.getExtEdgeId());
+		assertEquals(1.5, event2.getFactor());
 	}
 
 	@Test

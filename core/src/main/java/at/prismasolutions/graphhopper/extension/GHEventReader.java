@@ -31,80 +31,90 @@ public class GHEventReader {
 				if (jParser.getCurrentToken() == JsonToken.START_OBJECT) {
 					GHEvent event = new GHEvent();
 					while (jParser.nextToken() != JsonToken.END_OBJECT) {
+						// Only field names introduce a value; guard defensively so an
+						// unexpected token can never be read as if it were a field.
+						if (jParser.getCurrentToken() != JsonToken.FIELD_NAME) {
+							continue;
+						}
 						String eventfieldname = jParser.currentName();
-						if ("type".equals(eventfieldname)) {
-							int type = jParser.nextIntValue(0);
-							switch (type) {
-								case 0:
-									event.setType(GHEventType.ALL);
-									break;
-								case 1:
-									event.setType(GHEventType.DESCRIPTION);
-									break;
-								case 2:
-									event.setType(GHEventType.EQUAL);
-									break;
-								case 3:
-									event.setType(GHEventType.LESSERTHAN);
-									break;
-								case 4:
-									event.setType(GHEventType.GREATERTHAN);
-									break;
-							}
+						// Advance onto the value token. No GHEvent field carries a structured
+						// value, so any object/array (an unknown field, or e.g. a GeoJSON "shape")
+						// is skipped whole via skipChildren() before dispatch - otherwise the
+						// hand-rolled token stream would step into it and corrupt the remaining
+						// events. Scalar values are read via getValueAs* (rather than
+						// nextTextValue/nextIntValue) so a number written where a string is
+						// expected, and vice versa, is tolerated.
+						jParser.nextToken();
+						if (jParser.getCurrentToken() == JsonToken.START_OBJECT
+								|| jParser.getCurrentToken() == JsonToken.START_ARRAY) {
+							jParser.skipChildren();
+							continue;
 						}
-						if ("startDate".equals(eventfieldname)) {
-							event.setStartDate(parseDate(jParser));
-						}
-						if ("endDate".equals(eventfieldname)) {
-							event.setEndDate(parseDate(jParser));
-						}
-						if ("direction".equals(eventfieldname)) {
-							int val = jParser.nextIntValue(2);
-							event.setDirection((short) val);
-						}
-						if ("statFrom".equals(eventfieldname)) {
-							jParser.nextToken();
-							double val = jParser.getDoubleValue();
-							event.setStatFrom(val);
-						}
-						if ("statTo".equals(eventfieldname)) {
-							jParser.nextToken();
-							double val = jParser.getDoubleValue();
-							event.setStatTo(val);
-						}
-						if ("caption".equals(eventfieldname)) {
-							String val = jParser.nextTextValue();
-							event.setCaption(val);
-						}
-						if ("extType".equals(eventfieldname)) {
-							String val = jParser.nextTextValue();
-							event.setExtType(val);
-						}
-						if ("extId".equals(eventfieldname)) {
-							String val = jParser.nextTextValue();
-							event.setExtId(val);
-						}
-						if ("extEdgeId".equals(eventfieldname)) {
-							String val = jParser.nextTextValue();
-							event.setExtEdgeId(val);
-						}
-						if ("shape".equals(eventfieldname)) {
-							String val = jParser.nextTextValue();
-							event.setShape(val);
-						}
-						if ("parameterName".equals(eventfieldname)) {
-							String val = jParser.nextTextValue();
-							event.setParameterName(val);
-						}
-						if ("parameterValue".equals(eventfieldname)) {
-							jParser.nextToken();
-							double val = jParser.getValueAsDouble();
-							event.setParameterValue(val);
-						}
-						if ("factor".equals(eventfieldname)) {
-							jParser.nextToken();
-							double val = jParser.getDoubleValue();
-							event.setFactor(val);
+						switch (eventfieldname) {
+							case "type":
+								switch (jParser.getValueAsInt(0)) {
+									case 0:
+										event.setType(GHEventType.ALL);
+										break;
+									case 1:
+										event.setType(GHEventType.DESCRIPTION);
+										break;
+									case 2:
+										event.setType(GHEventType.EQUAL);
+										break;
+									case 3:
+										event.setType(GHEventType.LESSERTHAN);
+										break;
+									case 4:
+										event.setType(GHEventType.GREATERTHAN);
+										break;
+								}
+								break;
+							case "startDate":
+								event.setStartDate(parseDate(jParser));
+								break;
+							case "endDate":
+								event.setEndDate(parseDate(jParser));
+								break;
+							case "direction":
+								event.setDirection((short) jParser.getValueAsInt(2));
+								break;
+							case "statFrom":
+								event.setStatFrom(jParser.getValueAsDouble());
+								break;
+							case "statTo":
+								event.setStatTo(jParser.getValueAsDouble());
+								break;
+							case "caption":
+								event.setCaption(jParser.getValueAsString());
+								break;
+							case "extType":
+								event.setExtType(jParser.getValueAsString());
+								break;
+							case "extId":
+								event.setExtId(jParser.getValueAsString());
+								break;
+							case "extEdgeId":
+								// OSM way id: accept a quoted string ("12620747") or a raw JSON
+								// number (12620747); getValueAsString normalises both to the same
+								// key used by GHEventMapper (Long.toString of the edge's way id).
+								event.setExtEdgeId(jParser.getValueAsString());
+								break;
+							case "shape":
+								event.setShape(jParser.getValueAsString());
+								break;
+							case "parameterName":
+								event.setParameterName(jParser.getValueAsString());
+								break;
+							case "parameterValue":
+								event.setParameterValue(jParser.getValueAsDouble());
+								break;
+							case "factor":
+								event.setFactor(jParser.getValueAsDouble());
+								break;
+							default:
+								// unknown scalar field: value already consumed, nothing to do
+								break;
 						}
 					}
 					list.add(event);
@@ -129,11 +139,11 @@ public class GHEventReader {
 	 * well as a numeric unix timestamp (auto-detected as seconds or milliseconds) or a
 	 * numeric string. Returns {@code null} for a JSON {@code null} or an unparseable value.
 	 * <p>
-	 * Note: this advances the parser onto the value token, mirroring the behaviour of the
-	 * {@code nextTextValue()}/{@code nextIntValue()} calls used for the other fields.
+	 * The caller has already advanced the parser onto the value token, so this reads the
+	 * current token instead of advancing.
 	 */
 	private Instant parseDate(JsonParser jParser) throws IOException {
-		JsonToken token = jParser.nextToken();
+		JsonToken token = jParser.currentToken();
 		if (token == null || token == JsonToken.VALUE_NULL) {
 			return null;
 		}
