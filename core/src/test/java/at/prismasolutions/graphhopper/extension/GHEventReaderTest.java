@@ -26,7 +26,9 @@ public class GHEventReaderTest {
 	private static final String testOsm = "./src/test/resources/com/graphhopper/reader/osm/test-osm.xml";
 	private static final String testEventsPath = "./src/test/resources/com/graphhopper/reader/GHEvent/";
 	private static final String testEvents = testEventsPath + "ghevents.json";
-	private static final String testEventsRobust = testEventsPath + "ghevents-robust.json";
+	// Kept in a subfolder so the folder-scanning testManager (which reads every *.json in
+	// testEventsPath) doesn't pick up this fixture's edge "11" event and shadow ghevents.json.
+	private static final String testEventsRobust = testEventsPath + "robust/ghevents-robust.json";
 	private GraphHopper instance;
 
 	@BeforeEach
