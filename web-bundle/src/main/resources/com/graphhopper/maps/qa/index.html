@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GHEvents net-matching QA</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.3.1/ol.css">
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    #map { width: 100%; }
+    #panel {
+      position: absolute; top: 10px; right: 10px; z-index: 10;
+      background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 8px;
+      font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.3); max-width: 260px;
+    }
+    #panel label { display: block; margin: 2px 0; cursor: pointer; }
+    #status { margin-top: 6px; color: #555; font-size: 12px; }
+    #legend span { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border-radius: 2px; vertical-align: middle; }
+    #popup {
+      position: absolute; background: #fff; border: 1px solid #999; border-radius: 6px;
+      padding: 8px 10px; font: 12px/1.35 system-ui, sans-serif; max-width: 360px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3); pointer-events: none; display: none; transform: translate(-50%, calc(-100% - 12px));
+      white-space: pre-wrap; word-break: break-word;
+    }
+    #popup b { color: #d33; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="popup"></div>
+  <div id="panel">
+    <strong>GHEvents QA</strong>
+    <label><input type="checkbox" id="cbNet" checked> GraphHopper net (edges)</label>
+    <label><input type="checkbox" id="cbEvents" checked> GHEvents (DATEX)</label>
+    <div id="legend">
+      <div><span style="background:#e11"></span>block (factor&lt;0)</div>
+      <div><span style="background:#f90"></span>penalty (factor&gt;1)</div>
+      <div><span style="background:#39f"></span>info / other</div>
+    </div>
+    <div id="status">Zoom in to load events.</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ol@10.3.1/dist/ol.js"></script>
+  <script>
+  // Served same-origin by GraphHopper, so /mvt and /events are relative.
+  const API = location.origin;
+  const MIN_EVENT_ZOOM = 12;          // like MVT, only load the overlay when zoomed in
+  const wkt = new ol.format.WKT();
+  const state = { hoverWay: null };
+
+  // --- base map (same OSM tiles as the main /maps app default) ---
+  const base = new ol.layer.Tile({ source: new ol.source.OSM() });
+
+  // --- GraphHopper routing-graph (net) layer, from the MVT endpoint ---
+  const mvtSource = new ol.source.VectorTile({
+    format: new ol.format.MVT(),
+    // render_all: draw every edge (not just major roads at low zoom) so an event's
+    // matched edge is always present to highlight - same as the main /maps app.
+    url: API + '/mvt/{z}/{x}/{y}.mvt?render_all=true',
+    minZoom: 10,
+  });
+  const netLayer = new ol.layer.VectorTile({
+    source: mvtSource, minZoom: 10,
+    style: new ol.style.Style({ stroke: new ol.style.Stroke({ color: 'rgba(90,90,90,.55)', width: 1 }) }),
+  });
+  // Highlight overlay: same MVT source, only draws the edge(s) whose osm_way_id
+  // matches the hovered event. Cheap - shares the already-fetched tiles.
+  const highlightLayer = new ol.layer.VectorTile({
+    source: mvtSource, minZoom: 10, renderMode: 'vector',
+    style: function (feature) {
+      if (state.hoverWay == null) return null;
+      const w = feature.get('osm_way_id');
+      if (w == null || String(w) !== String(state.hoverWay)) return null;
+      return new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#0a0', width: 6 }) });
+    },
+  });
+
+  // --- GHEvents (DATEX geometry) overlay ---
+  const eventSource = new ol.source.Vector();
+  function eventStyle(feature) {
+    const f = feature.get('factor');
+    let color = '#39f';
+    if (typeof f === 'number' && f < 0) color = '#e11';
+    else if (typeof f === 'number' && f > 1) color = '#f90';
+    const geom = feature.getGeometry().getType();
+    if (geom === 'Point') {
+      return new ol.style.Style({ image: new ol.style.Circle({ radius: 6,
+        fill: new ol.style.Fill({ color }), stroke: new ol.style.Stroke({ color: '#333', width: 1 }) }) });
+    }
+    return new ol.style.Style({ stroke: new ol.style.Stroke({ color, width: 4 }) });
+  }
+  const eventLayer = new ol.layer.Vector({ source: eventSource, style: eventStyle });
+
+  const map = new ol.Map({
+    target: 'map',
+    layers: [base, netLayer, highlightLayer, eventLayer],
+    view: new ol.View({ center: ol.proj.fromLonLat([13.404, 52.52]), zoom: 12 }),  // Berlin
+  });
+
+  // --- toggles ---
+  const cbNet = document.getElementById('cbNet'), cbEvents = document.getElementById('cbEvents');
+  const status = document.getElementById('status');
+  cbNet.onchange = () => { netLayer.setVisible(cbNet.checked); highlightLayer.setVisible(cbNet.checked); };
+  cbEvents.onchange = () => { eventLayer.setVisible(cbEvents.checked); if (cbEvents.checked) loadEvents(); else eventSource.clear(); };
+
+  // --- load events for the current viewport (zoom-gated, debounced) ---
+  let loadTimer = null;
+  function scheduleLoad() { clearTimeout(loadTimer); loadTimer = setTimeout(loadEvents, 250); }
+  async function loadEvents() {
+    if (!cbEvents.checked) return;
+    const zoom = map.getView().getZoom();
+    if (zoom < MIN_EVENT_ZOOM) { eventSource.clear(); status.textContent = `Zoom in to ≥ ${MIN_EVENT_ZOOM} to load events (now ${zoom.toFixed(1)}).`; return; }
+    const ext = map.getView().calculateExtent(map.getSize());
+    const [minLon, minLat, maxLon, maxLat] = ol.proj.transformExtent(ext, 'EPSG:3857', 'EPSG:4326');
+    status.textContent = 'Loading events…';
+    try {
+      const res = await fetch(`${API}/events?bbox=${minLon},${minLat},${maxLon},${maxLat}`);
+      const events = await res.json();
+      eventSource.clear();
+      let n = 0;
+      for (const ev of events) {
+        if (!ev.shape) continue;
+        // describe_location joins line+point parts with "; "; read each part.
+        for (const part of String(ev.shape).split(';')) {
+          const s = part.trim();
+          if (!s) continue;
+          let geom;
+          try { geom = wkt.readGeometry(s, { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' }); }
+          catch (e) { continue; }
+          const feat = new ol.Feature({ geometry: geom });
+          feat.setProperties(ev, true);
+          eventSource.addFeature(feat);
+          n++;
+        }
+      }
+      const hdr = res.headers.get('X-GH-Events') || '';
+      status.textContent = `${events.length} events${hdr.startsWith('truncated') ? ' (truncated!)' : ''} · ${n} shapes`;
+    } catch (e) {
+      status.textContent = 'Error loading events: ' + e;
+    }
+  }
+  map.on('moveend', scheduleLoad);
+  loadEvents();
+
+  // --- hover: show properties + highlight matched edge(s) ---
+  const popup = document.getElementById('popup');
+  const overlay = new ol.Overlay({ element: popup, positioning: 'bottom-center', stopEvent: false });
+  map.addOverlay(overlay);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  map.on('pointermove', function (evt) {
+    if (evt.dragging) return;
+    let hit = null;
+    map.forEachFeatureAtPixel(evt.pixel, f => { hit = f; return true; },
+      { layerFilter: l => l === eventLayer, hitTolerance: 4 });
+
+    const way = hit ? hit.get('extEdgeId') : null;
+    if (way !== state.hoverWay) { state.hoverWay = way; highlightLayer.changed(); }
+
+    if (hit) {
+      const p = hit.getProperties();
+      const header = `<b>factor ${p.factor}</b> · type ${p.type} · dir ${p.direction} · way ${esc(p.extEdgeId)}`;
+      popup.innerHTML = header + '\n' + esc(p.caption || '');
+      overlay.setPosition(evt.coordinate);
+      popup.style.display = '';
+      map.getTargetElement().style.cursor = 'pointer';
+    } else {
+      popup.style.display = 'none';
+      map.getTargetElement().style.cursor = '';
+    }
+  });
+  </script>
+</body>
+</html>
