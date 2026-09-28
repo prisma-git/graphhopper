@@ -11,23 +11,45 @@
     #panel {
       position: absolute; top: 10px; right: 10px; z-index: 10;
       background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 8px;
-      font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.3); max-width: 260px;
+      font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.3); max-width: 240px;
     }
     #panel label { display: block; margin: 2px 0; cursor: pointer; }
     #status { margin-top: 6px; color: #555; font-size: 12px; }
     #legend span { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border-radius: 2px; vertical-align: middle; }
+
+    /* hover tooltip (events + net edges) */
     #popup {
       position: absolute; background: #fff; border: 1px solid #999; border-radius: 6px;
-      padding: 8px 10px; font: 12px/1.35 system-ui, sans-serif; max-width: 360px;
-      box-shadow: 0 2px 8px rgba(0,0,0,.3); pointer-events: none; display: none; transform: translate(-50%, calc(-100% - 12px));
-      white-space: pre-wrap; word-break: break-word;
+      padding: 7px 9px; font: 12px/1.35 system-ui, sans-serif; max-width: 380px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3); pointer-events: none; display: none;
+      transform: translate(-50%, calc(-100% - 12px)); z-index: 12;
     }
-    #popup b { color: #d33; }
+    #popup .cap { white-space: pre-wrap; word-break: break-word; margin-bottom: 4px; }
+    #popup table, #info table { border-collapse: collapse; }
+    #popup td, #info td { padding: 0 6px 0 0; vertical-align: top; }
+    #popup td.k, #info td.k { color: #666; white-space: nowrap; }
+
+    /* click info window */
+    #info {
+      position: absolute; top: 10px; left: 10px; z-index: 11; display: none;
+      background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.35);
+      font: 12px/1.4 system-ui, sans-serif; width: 380px; max-height: calc(100% - 20px);
+      overflow: auto; padding: 10px 12px;
+    }
+    #info h3 { margin: 0 0 6px; font-size: 14px; }
+    #info .cap { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 6px; border-radius: 4px; margin-bottom: 8px; }
+    #info .close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #888; font-size: 16px; }
+    #info details { border-top: 1px solid #eee; padding: 4px 0; }
+    #info summary { cursor: pointer; }
+    #info summary:hover { background: #eef6ff; }
+    #info .edetail { margin: 4px 0 4px 14px; }
+    #info .muted { color: #888; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="popup"></div>
+  <div id="info"></div>
   <div id="panel">
     <strong>GHEvents QA</strong>
     <label><input type="checkbox" id="cbNet" checked> GraphHopper net (edges)</label>
@@ -42,136 +64,195 @@
 
   <script src="https://cdn.jsdelivr.net/npm/ol@10.3.1/dist/ol.js"></script>
   <script>
-  // Served same-origin by GraphHopper, so /mvt and /events are relative.
   const API = location.origin;
-  const MIN_EVENT_ZOOM = 12;          // like MVT, only load the overlay when zoomed in
+  // z where MVTResource first renders the COMPLETE network (all edges incl. minor roads:
+  // its "zInfo > 12" branch). Both the net and the events overlay are limited to it so
+  // they appear together, like the full graph on the main /maps app.
+  const NET_MIN_ZOOM = 13;
+  const MIN_EVENT_ZOOM = NET_MIN_ZOOM;
   const wkt = new ol.format.WKT();
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+  const wayOf = p => p.ext_edge_id != null ? p.ext_edge_id : p.extEdgeId;   // GH serializes snake_case
   const state = { hoverWay: null };
 
-  // --- base map (same OSM tiles as the main /maps app default) ---
+  // ---- base + layers (bottom -> top; highlights sit ABOVE the events so they show
+  //      even though the DATEX geometry is drawn over the matched edge) ----
   const base = new ol.layer.Tile({ source: new ol.source.OSM() });
 
-  // --- GraphHopper routing-graph (net) layer, from the MVT endpoint ---
   const mvtSource = new ol.source.VectorTile({
     format: new ol.format.MVT(),
-    // render_all: draw every edge (not just major roads at low zoom) so an event's
-    // matched edge is always present to highlight - same as the main /maps app.
     url: API + '/mvt/{z}/{x}/{y}.mvt?render_all=true',
-    minZoom: 10,
+    minZoom: NET_MIN_ZOOM,
   });
   const netLayer = new ol.layer.VectorTile({
-    source: mvtSource, minZoom: 10,
+    source: mvtSource, minZoom: NET_MIN_ZOOM,
     style: new ol.style.Style({ stroke: new ol.style.Stroke({ color: 'rgba(90,90,90,.55)', width: 1 }) }),
   });
-  // Highlight overlay: same MVT source, only draws the edge(s) whose osm_way_id
-  // matches the hovered event. Cheap - shares the already-fetched tiles.
-  const highlightLayer = new ol.layer.VectorTile({
-    source: mvtSource, minZoom: 10, renderMode: 'vector',
-    style: function (feature) {
-      if (state.hoverWay == null) return null;
-      const w = feature.get('osm_way_id');
-      if (w == null || String(w) !== String(state.hoverWay)) return null;
-      return new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#0a0', width: 6 }) });
-    },
-  });
 
-  // --- GHEvents (DATEX geometry) overlay ---
   const eventSource = new ol.source.Vector();
   function eventStyle(feature) {
     const f = feature.get('factor');
-    let color = '#39f';
-    if (typeof f === 'number' && f < 0) color = '#e11';
-    else if (typeof f === 'number' && f > 1) color = '#f90';
-    const geom = feature.getGeometry().getType();
-    if (geom === 'Point') {
+    let color = 'rgba(51,153,255,.6)';
+    if (typeof f === 'number' && f < 0) color = 'rgba(238,17,17,.6)';
+    else if (typeof f === 'number' && f > 1) color = 'rgba(255,153,0,.65)';
+    if (feature.getGeometry().getType() === 'Point')
       return new ol.style.Style({ image: new ol.style.Circle({ radius: 6,
         fill: new ol.style.Fill({ color }), stroke: new ol.style.Stroke({ color: '#333', width: 1 }) }) });
-    }
-    return new ol.style.Style({ stroke: new ol.style.Stroke({ color, width: 4 }) });
+    return new ol.style.Style({ stroke: new ol.style.Stroke({ color, width: 5 }) });
   }
   const eventLayer = new ol.layer.Vector({ source: eventSource, style: eventStyle });
 
-  const map = new ol.Map({
-    target: 'map',
-    layers: [base, netLayer, highlightLayer, eventLayer],
-    view: new ol.View({ center: ol.proj.fromLonLat([13.404, 52.52]), zoom: 12 }),  // Berlin
+  // hovering an event highlights all edges of its OSM way (osm_way_id match), drawn on top
+  const hoverWayLayer = new ol.layer.VectorTile({
+    source: mvtSource, minZoom: NET_MIN_ZOOM, renderMode: 'vector',
+    style: function (feature) {
+      if (state.hoverWay == null) return null;
+      const w = feature.get('osm_way_id');
+      if (w == null || String(w).split(' ')[0] !== String(state.hoverWay)) return null;
+      return [
+        new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#fff', width: 9 }) }),
+        new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#00e5ff', width: 5 }) }),
+      ];
+    },
   });
 
-  // --- toggles ---
+  // a single edge highlighted by hovering a row in the click-info list (topmost)
+  const pickSource = new ol.source.Vector();
+  const pickLayer = new ol.layer.Vector({ source: pickSource, style: [
+    new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#fff', width: 10 }) }),
+    new ol.style.Style({ stroke: new ol.style.Stroke({ color: '#ff00d0', width: 5 }) }),
+  ] });
+
+  const map = new ol.Map({
+    target: 'map',
+    layers: [base, netLayer, eventLayer, hoverWayLayer, pickLayer],
+    view: new ol.View({ center: ol.proj.fromLonLat([13.404, 52.52]), zoom: 13 }),
+  });
+
+  // ---- toggles ----
   const cbNet = document.getElementById('cbNet'), cbEvents = document.getElementById('cbEvents');
   const status = document.getElementById('status');
-  cbNet.onchange = () => { netLayer.setVisible(cbNet.checked); highlightLayer.setVisible(cbNet.checked); };
-  cbEvents.onchange = () => { eventLayer.setVisible(cbEvents.checked); if (cbEvents.checked) loadEvents(); else eventSource.clear(); };
+  cbNet.onchange = () => { netLayer.setVisible(cbNet.checked); hoverWayLayer.setVisible(cbNet.checked); };
+  cbEvents.onchange = () => { eventLayer.setVisible(cbEvents.checked); cbEvents.checked ? loadEvents() : eventSource.clear(); };
 
-  // --- load events for the current viewport (zoom-gated, debounced) ---
+  // ---- helpers ----
+  function bboxOf4326() {
+    const [a,b,c,d] = ol.proj.transformExtent(map.getView().calculateExtent(map.getSize()), 'EPSG:3857', 'EPSG:4326');
+    return `${a},${b},${c},${d}`;
+  }
+  function addShape(ev) {           // parse an event's WKT shape into feature(s)
+    let n = 0;
+    for (const part of String(ev.shape || '').split(';')) {
+      const s = part.trim(); if (!s) continue;
+      let geom; try { geom = wkt.readGeometry(s, { dataProjection:'EPSG:4326', featureProjection:'EPSG:3857' }); } catch(e){ continue; }
+      const feat = new ol.Feature({ geometry: geom }); feat.setProperties(ev, true);
+      eventSource.addFeature(feat); n++;
+    }
+    return n;
+  }
+  const SKIP = new Set(['geometry','shape','stat_from','stat_to','edge_id']);
+  function propTable(props) {       // all fields as a table (caption rendered separately)
+    let rows = '';
+    for (const [k,v] of Object.entries(props)) {
+      if (SKIP.has(k) || k === 'caption' || v == null || v === '') continue;
+      rows += `<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>`;
+    }
+    return `<table>${rows}</table>`;
+  }
+
+  // ---- load events for viewport (zoom-gated, debounced) ----
   let loadTimer = null;
-  function scheduleLoad() { clearTimeout(loadTimer); loadTimer = setTimeout(loadEvents, 250); }
+  const scheduleLoad = () => { clearTimeout(loadTimer); loadTimer = setTimeout(loadEvents, 250); };
   async function loadEvents() {
     if (!cbEvents.checked) return;
     const zoom = map.getView().getZoom();
     if (zoom < MIN_EVENT_ZOOM) { eventSource.clear(); status.textContent = `Zoom in to ≥ ${MIN_EVENT_ZOOM} to load events (now ${zoom.toFixed(1)}).`; return; }
-    const ext = map.getView().calculateExtent(map.getSize());
-    const [minLon, minLat, maxLon, maxLat] = ol.proj.transformExtent(ext, 'EPSG:3857', 'EPSG:4326');
     status.textContent = 'Loading events…';
     try {
-      const res = await fetch(`${API}/events?bbox=${minLon},${minLat},${maxLon},${maxLat}`);
+      const res = await fetch(`${API}/events?bbox=${bboxOf4326()}`);
       const events = await res.json();
-      eventSource.clear();
-      let n = 0;
-      for (const ev of events) {
-        if (!ev.shape) continue;
-        // describe_location joins line+point parts with "; "; read each part.
-        for (const part of String(ev.shape).split(';')) {
-          const s = part.trim();
-          if (!s) continue;
-          let geom;
-          try { geom = wkt.readGeometry(s, { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857' }); }
-          catch (e) { continue; }
-          const feat = new ol.Feature({ geometry: geom });
-          feat.setProperties(ev, true);
-          eventSource.addFeature(feat);
-          n++;
-        }
-      }
+      eventSource.clear(); let n = 0;
+      for (const ev of events) if (ev.shape) n += addShape(ev);
       const hdr = res.headers.get('X-GH-Events') || '';
       status.textContent = `${events.length} events${hdr.startsWith('truncated') ? ' (truncated!)' : ''} · ${n} shapes`;
-    } catch (e) {
-      status.textContent = 'Error loading events: ' + e;
-    }
+    } catch (e) { status.textContent = 'Error loading events: ' + e; }
   }
   map.on('moveend', scheduleLoad);
   loadEvents();
 
-  // --- hover: show properties + highlight matched edge(s) ---
+  // ---- hover: event = full info; else net edge = edge attributes (like /maps) ----
   const popup = document.getElementById('popup');
   const overlay = new ol.Overlay({ element: popup, positioning: 'bottom-center', stopEvent: false });
   map.addOverlay(overlay);
-  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
   map.on('pointermove', function (evt) {
     if (evt.dragging) return;
-    let hit = null;
-    map.forEachFeatureAtPixel(evt.pixel, f => { hit = f; return true; },
-      { layerFilter: l => l === eventLayer, hitTolerance: 4 });
+    let ev = null, edge = null;
+    map.forEachFeatureAtPixel(evt.pixel, f => { ev = f; return true; }, { layerFilter: l => l === eventLayer, hitTolerance: 4 });
+    if (!ev) map.forEachFeatureAtPixel(evt.pixel, f => { edge = f; return true; }, { layerFilter: l => l === netLayer, hitTolerance: 3 });
 
-    // GraphHopper's response ObjectMapper serializes snake_case (ext_edge_id); tolerate
-    // camelCase too in case that ever changes.
-    const wayOf = p => p.ext_edge_id != null ? p.ext_edge_id : p.extEdgeId;
-    const way = hit ? wayOf(hit.getProperties()) : null;
-    if (way !== state.hoverWay) { state.hoverWay = way; highlightLayer.changed(); }
+    const way = ev ? wayOf(ev.getProperties()) : null;
+    if (way !== state.hoverWay) { state.hoverWay = way; hoverWayLayer.changed(); }
 
-    if (hit) {
-      const p = hit.getProperties();
-      const header = `<b>factor ${p.factor}</b> · type ${p.type} · dir ${p.direction} · way ${esc(wayOf(p))}`;
-      popup.innerHTML = header + '\n' + esc(p.caption || '');
-      overlay.setPosition(evt.coordinate);
-      popup.style.display = '';
-      map.getTargetElement().style.cursor = 'pointer';
-    } else {
-      popup.style.display = 'none';
-      map.getTargetElement().style.cursor = '';
-    }
+    if (ev) {
+      const p = ev.getProperties();
+      popup.innerHTML = `<div class="cap">${esc(p.caption || '')}</div>` + propTable(p);
+    } else if (edge && cbNet.checked) {
+      popup.innerHTML = `<div class="cap"><b>edge ${esc(edge.get('edge_id'))}</b> · osm ${esc(edge.get('osm_way_id'))}</div>` + propTable(edge.getProperties());
+    } else { popup.style.display = 'none'; map.getTargetElement().style.cursor = ''; return; }
+    overlay.setPosition(evt.coordinate); popup.style.display = ''; map.getTargetElement().style.cursor = 'pointer';
   });
+
+  // ---- click an event: info window with the matched-edge list (disclosure + row highlight) ----
+  const info = document.getElementById('info');
+  map.on('singleclick', function (evt) {
+    let ev = null;
+    map.forEachFeatureAtPixel(evt.pixel, f => { ev = f; return true; }, { layerFilter: l => l === eventLayer, hitTolerance: 4 });
+    if (!ev) return;
+    const p = ev.getProperties();
+    const way = wayOf(p);
+    state.hoverWay = way; hoverWayLayer.changed();
+    info.innerHTML = `<span class="close" title="close">✕</span>`
+      + `<h3>GHEvent · way ${esc(way)}</h3>`
+      + `<div class="cap">${esc(p.caption || '')}</div>`
+      + propTable(p)
+      + `<h3 style="margin-top:10px">Matched edges <span class="muted" id="edgeCount">…</span></h3>`
+      + `<div id="edges" class="muted">loading…</div>`;
+    info.style.display = 'block';
+    info.querySelector('.close').onclick = () => { info.style.display = 'none'; pickSource.clear(); };
+    loadEdges(ev.getGeometry(), way);
+  });
+
+  async function loadEdges(geom, way) {
+    // bbox = the event geometry extent, padded, in 4326
+    let ext = ol.proj.transformExtent(geom.getExtent(), 'EPSG:3857', 'EPSG:4326');
+    const padX = Math.max((ext[2]-ext[0])*0.2, 0.002), padY = Math.max((ext[3]-ext[1])*0.2, 0.002);
+    const bbox = `${ext[0]-padX},${ext[1]-padY},${ext[2]+padX},${ext[3]+padY}`;
+    try {
+      const res = await fetch(`${API}/events/edges?bbox=${bbox}&way=${encodeURIComponent(way)}`);
+      const edges = await res.json();
+      document.getElementById('edgeCount').textContent = `(${edges.length})`;
+      const box = document.getElementById('edges'); box.classList.remove('muted');
+      if (!edges.length) { box.innerHTML = '<span class="muted">no graph edges for this way in view</span>'; return; }
+      box.innerHTML = '';
+      for (const e of edges) {
+        const d = document.createElement('details');
+        const rc = e.road_class ? ` · ${esc(e.road_class)}` : '';
+        const dist = e.distance != null ? ` · ${(+e.distance).toFixed(0)} m` : '';
+        let rows = '';
+        for (const [k,v] of Object.entries(e)) { if (k === 'geometry' || v == null || v === '') continue; rows += `<tr><td class="k">${esc(k)}</td><td>${esc(v)}</td></tr>`; }
+        d.innerHTML = `<summary>edge ${esc(e.edge_id)}${rc}${dist}</summary><div class="edetail"><table>${rows}</table></div>`;
+        const highlight = () => {
+          pickSource.clear();
+          if (!e.geometry) return;
+          try { pickSource.addFeature(new ol.Feature({ geometry: wkt.readGeometry(e.geometry, { dataProjection:'EPSG:4326', featureProjection:'EPSG:3857' }) })); } catch(x){}
+        };
+        d.querySelector('summary').addEventListener('mouseenter', highlight);
+        d.addEventListener('mouseleave', () => pickSource.clear());
+        box.appendChild(d);
+      }
+    } catch (e) { document.getElementById('edges').textContent = 'error: ' + e; }
+  }
   </script>
 </body>
 </html>
