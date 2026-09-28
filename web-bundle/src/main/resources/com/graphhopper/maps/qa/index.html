@@ -154,12 +154,15 @@
     map.forEachFeatureAtPixel(evt.pixel, f => { hit = f; return true; },
       { layerFilter: l => l === eventLayer, hitTolerance: 4 });
 
-    const way = hit ? hit.get('extEdgeId') : null;
+    // GraphHopper's response ObjectMapper serializes snake_case (ext_edge_id); tolerate
+    // camelCase too in case that ever changes.
+    const wayOf = p => p.ext_edge_id != null ? p.ext_edge_id : p.extEdgeId;
+    const way = hit ? wayOf(hit.getProperties()) : null;
     if (way !== state.hoverWay) { state.hoverWay = way; highlightLayer.changed(); }
 
     if (hit) {
       const p = hit.getProperties();
-      const header = `<b>factor ${p.factor}</b> · type ${p.type} · dir ${p.direction} · way ${esc(p.extEdgeId)}`;
+      const header = `<b>factor ${p.factor}</b> · type ${p.type} · dir ${p.direction} · way ${esc(wayOf(p))}`;
       popup.innerHTML = header + '\n' + esc(p.caption || '');
       overlay.setPosition(evt.coordinate);
       popup.style.display = '';
