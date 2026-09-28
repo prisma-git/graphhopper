@@ -72,6 +72,20 @@
   const wayOf = e => e.ext_edge_id != null ? e.ext_edge_id : e.extEdgeId;   // GH serializes snake_case
   const readGeom = s => wkt.readGeometry(s, { dataProjection:'EPSG:4326', featureProjection:'EPSG:3857' });
   const state = { hoverWays: null, hoverKey: null };
+  const loadedIds = new Set();   // ext_ids currently loaded, to detect _dir2 companions
+  // The Berlin feed emits a per-carriageway companion (X_1 <-> X_dir2_1) for both-direction
+  // closures, so a matched-one-way record whose twin is also present is actually fine.
+  function companion(id) {
+    id = String(id);
+    if (id.includes('_dir2_')) return id.replace('_dir2_', '_');
+    const m = id.match(/^(.*)_(\d+)$/);
+    return m ? `${m[1]}_dir2_${m[2]}` : null;
+  }
+  function companionLine(id) {
+    const c = companion(id);
+    if (c && loadedIds.has(c)) return `<div style="color:#080;margin-bottom:6px">↔ opposite-direction companion loaded: <b>${esc(c)}</b> — both carriageways covered</div>`;
+    return '';
+  }
 
   // layers bottom->top; highlights sit ABOVE events so they show through the DATEX line
   const base = new ol.layer.Tile({ source: new ol.source.OSM() });
@@ -157,6 +171,7 @@
         let g = byRec.get(id); if (!g) { g = { rep: ev, ways: [] }; byRec.set(id, g); }
         const w = wayOf(ev); if (w != null) g.ways.push(String(w));
       }
+      loadedIds.clear(); for (const k of byRec.keys()) loadedIds.add(String(k));
       eventSource.clear(); let n = 0;
       for (const g of byRec.values()) {
         const props = Object.assign({}, g.rep); props.ways = g.ways; delete props.ext_edge_id;
@@ -201,15 +216,18 @@
     state.hoverWays = new Set(ways); state.hoverKey = ways.join(','); hoverWayLayer.changed();
     info.innerHTML = `<span class="close" title="close">✕</span>`
       + `<h3>GHEvent · ${ways.length} matched ways</h3>`
-      + `<div class="cap">${esc(p.caption || '')}</div>` + propTable(p)
+      + `<div class="cap">${esc(p.caption || '')}</div>` + companionLine(p.ext_id) + propTable(p)
       + `<h3 style="margin-top:10px">Matched ways <span class="muted" id="edgeCount">…</span></h3>`
       + `<div id="edges" class="muted">loading…</div>`;
     info.style.display = 'block';
     info.querySelector('.close').onclick = () => { info.style.display = 'none'; pickSource.clear(); };
-    loadWays(ev.getGeometry(), ways);
+    loadWays(ev.getGeometry(), ways, p);
   });
 
-  async function loadWays(geom, ways) {
+  // a way's representative edge is one-way when car_access is "true | false" (fwd yes, rev no)
+  const isOneway = e => { const c = e && e.car_access; if (c == null) return false; const p = String(c).split('|'); return p.length === 2 && p[1].trim() === 'false'; };
+
+  async function loadWays(geom, ways, rec) {
     let ext = ol.proj.transformExtent(geom.getExtent(), 'EPSG:3857', 'EPSG:4326');
     const padX = Math.max((ext[2]-ext[0])*0.15, 0.003), padY = Math.max((ext[3]-ext[1])*0.15, 0.003);
     const bbox = `${ext[0]-padX},${ext[1]-padY},${ext[2]+padX},${ext[3]+padY}`;
@@ -220,11 +238,14 @@
       for (const e of edges) { const w = String(e.osm_way_id); if (!groups.has(w)) groups.set(w, []); groups.get(w).push(e); }
       document.getElementById('edgeCount').textContent = `(${ways.length} ways, ${edges.length} edges in view)`;
       const box = document.getElementById('edges'); box.classList.remove('muted'); box.innerHTML = '';
+      let present = 0, oneway = 0;
       for (const w of ways) {
         const es = groups.get(String(w)) || [];
         const rc = es[0] ? (es[0].road_class || '?') : '?';
         const nm = es[0] ? (es[0].street_name || '') : '';
         const round = es[0] && (es[0].roundabout === 'true' || es[0].roundabout === true);
+        const ow = isOneway(es[0]);
+        if (es.length) { present++; if (ow) oneway++; }
         const d = document.createElement('details');
         let inner = '';
         for (const e of es) {
@@ -232,11 +253,22 @@
           inner += `<div class="edetail"><table>${rows}</table></div>`;
         }
         if (!es.length) inner = '<div class="edetail muted">no edges in view</div>';
-        d.innerHTML = `<summary>way ${esc(w)} · ${esc(rc)}${round ? ' <span class="round">roundabout</span>' : ''}${nm ? ' · ' + esc(nm) : ''} · ${es.length} edge(s)</summary>${inner}`;
+        d.innerHTML = `<summary>way ${esc(w)} · ${esc(rc)}${round ? ' <span class="round">roundabout</span>' : ''}${ow ? ' <span class="round">one-way</span>' : ''}${nm ? ' · ' + esc(nm) : ''} · ${es.length} edge(s)</summary>${inner}`;
         const hl = () => { pickSource.clear(); for (const e of es) { if (!e.geometry) continue; try { pickSource.addFeature(new ol.Feature({ geometry: readGeom(e.geometry) })); } catch(x){} } };
         d.querySelector('summary').addEventListener('mouseenter', hl);
         d.addEventListener('mouseleave', () => pickSource.clear());
         box.appendChild(d);
+      }
+      // A genuine single-carriageway miss: the DATEX text says both directions, all matched
+      // ways are one-way, AND there is no _dir2 companion covering the opposite carriageway.
+      // (The Berlin feed usually provides that companion, so this stays quiet in practice.)
+      const isBoth = /beiden? richtung/i.test((rec && rec.caption) || '');
+      const twin = rec && companion(rec.ext_id);
+      if (isBoth && present > 0 && oneway === present && !(twin && loadedIds.has(twin))) {
+        const warn = document.createElement('div');
+        warn.className = 'round'; warn.style.margin = '4px 0 8px';
+        warn.textContent = '⚠ both-directions closure, all matched ways are one-way, and no _dir2 companion is loaded — the opposite carriageway may NOT be blocked.';
+        box.parentNode.insertBefore(warn, box);
       }
     } catch (e) { document.getElementById('edges').textContent = 'error: ' + e; }
   }
