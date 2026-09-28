@@ -101,7 +101,8 @@ public class EventsResource {
         return Response.ok(out).header("X-GH-Events", (truncated ? "truncated:" : "") + out.size()).build();
     }
 
-    /** The graph edges of one OSM way inside the bbox, with attributes + geometry. */
+    /** The graph edges of one or more OSM ways (comma-separated) inside the bbox, with
+     *  attributes + geometry. Each edge carries its osm_way_id so the caller can group. */
     @GET
     @Path("edges")
     @Produces(MediaType.APPLICATION_JSON)
@@ -109,6 +110,7 @@ public class EventsResource {
         if (!(graphHopper instanceof GraphHopperWithId) || way == null || way.isEmpty())
             return Response.ok(Collections.emptyList()).build();
         final GraphHopperWithId idHopper = (GraphHopperWithId) graphHopper;
+        final Set<String> ways = new java.util.HashSet<>(java.util.Arrays.asList(way.split(",")));
 
         BBox bbox = requireBBox(bboxStr);
         if (tooBig(bbox))
@@ -121,10 +123,12 @@ public class EventsResource {
             if (!seen.add(edgeId))
                 return;
             Long wayId = idHopper.getWay(edgeId);
-            if (wayId == null || !way.equals(String.valueOf(wayId)))
+            if (wayId == null || !ways.contains(String.valueOf(wayId)))
                 return;
             EdgeIteratorState edge = graphHopper.getBaseGraph().getEdgeIteratorStateForKey(edgeId * 2);
-            edges.add(describeEdge(edge));
+            Map<String, Object> m = describeEdge(edge);
+            m.put("osm_way_id", String.valueOf(wayId));
+            edges.add(m);
         });
         return Response.ok(edges).header("X-GH-Events", "edges:" + edges.size()).build();
     }
