@@ -218,7 +218,7 @@
     const oe = evt.originalEvent;
     popup.style.left = Math.min(oe.clientX + 14, window.innerWidth - 400) + 'px';
     popup.style.top = Math.min(oe.clientY + 14, window.innerHeight - 220) + 'px';
-    popup.style.display = ''; map.getTargetElement().style.cursor = 'pointer';
+    popup.style.display = 'block'; map.getTargetElement().style.cursor = 'pointer';
   });
 
   // ---- click a record: info window listing ALL matched ways (roundabout flagged) ----
