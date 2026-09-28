@@ -190,17 +190,32 @@
   map.addOverlay(overlay);
   map.on('pointermove', function (evt) {
     if (evt.dragging) return;
-    let ev = null, edge = null;
-    map.forEachFeatureAtPixel(evt.pixel, f => { ev = f; return true; }, { layerFilter: l => l === eventLayer, hitTolerance: 4 });
+    const seen = new Set(), evs = []; let edge = null;
+    map.forEachFeatureAtPixel(evt.pixel, f => {
+      const id = String(f.get('ext_id'));
+      if (!seen.has(id)) { seen.add(id); evs.push(f); }
+    }, { layerFilter: l => l === eventLayer, hitTolerance: 4 });
     map.forEachFeatureAtPixel(evt.pixel, f => { edge = f; return true; }, { layerFilter: l => l === netLayer, hitTolerance: 3 });
 
-    const ways = ev ? ev.get('ways') : null;
-    const key = ways ? ways.join(',') : null;
-    if (key !== state.hoverKey) { state.hoverKey = key; state.hoverWays = ways ? new Set(ways) : null; hoverWayLayer.changed(); }
+    // highlight the edges of ALL overlapping events (a base + _dir2 companion lights up
+    // both carriageways), not just the topmost one.
+    const allWays = [];
+    for (const f of evs) allWays.push(...(f.get('ways') || []));
+    const key = allWays.join(',');
+    if (key !== state.hoverKey) { state.hoverKey = key; state.hoverWays = allWays.length ? new Set(allWays) : null; hoverWayLayer.changed(); }
 
     let html = '';
-    if (ev) { const p = ev.getProperties(); html += `<div class="cap">${esc(p.caption || '')}</div>` + propTable(p); }
-    if (edge && cbNet.checked) { html += (ev ? '<hr>' : '') + `<div class="cap"><b>edge ${esc(edge.get('edge_id'))}</b> · osm ${esc(edge.get('osm_way_id'))}</div>` + propTable(edge.getProperties()); }
+    if (evs.length > 1) {
+      html += `<div style="font-weight:bold;margin-bottom:3px">⧉ ${evs.length} GHEvents here — click to choose</div>`;
+      html += evs.map(f => {
+        const p = f.getProperties(), fac = p.factor, col = fac < 0 ? '#e11' : fac > 1 ? '#f90' : '#39f';
+        return `<div><span style="color:${col}">■</span> ${esc(p.ext_id)} <span style="color:#888">f=${esc(fac)}, ${(p.ways || []).length} ways</span><br><span style="color:#555">${esc((p.caption || '').split('\n')[0].slice(0, 55))}</span></div>`;
+      }).join('');
+    } else if (evs.length === 1) {
+      const p = evs[0].getProperties();
+      html += `<div class="cap">${esc(p.caption || '')}</div>` + propTable(p);
+    }
+    if (edge && cbNet.checked) { html += (evs.length ? '<hr>' : '') + `<div class="cap"><b>edge ${esc(edge.get('edge_id'))}</b> · osm ${esc(edge.get('osm_way_id'))}</div>` + propTable(edge.getProperties()); }
     if (!html) { popup.style.display = 'none'; map.getTargetElement().style.cursor = ''; return; }
     popup.innerHTML = html; overlay.setPosition(evt.coordinate); popup.style.display = ''; map.getTargetElement().style.cursor = 'pointer';
   });
@@ -208,13 +223,35 @@
   // ---- click a record: info window listing ALL matched ways (roundabout flagged) ----
   const info = document.getElementById('info');
   map.on('singleclick', function (evt) {
-    let ev = null;
-    map.forEachFeatureAtPixel(evt.pixel, f => { ev = f; return true; }, { layerFilter: l => l === eventLayer, hitTolerance: 4 });
-    if (!ev) return;
+    // collect ALL events under the cursor (companion records overlap exactly), one per record
+    const seen = new Set(), hits = [];
+    map.forEachFeatureAtPixel(evt.pixel, f => {
+      const id = String(f.get('ext_id'));
+      if (!seen.has(id)) { seen.add(id); hits.push(f); }
+    }, { layerFilter: l => l === eventLayer, hitTolerance: 4 });
+    if (!hits.length) return;
+    showRecords(hits, hits[0]);
+  });
+
+  function showRecords(hits, active) {
+    let chooser = '';
+    if (hits.length > 1) {
+      chooser = `<div style="margin-bottom:8px">${hits.length} events here — pick one:<br>` + hits.map((f, i) => {
+        const p = f.getProperties(), fac = p.factor, col = fac < 0 ? '#e11' : fac > 1 ? '#f90' : '#39f';
+        const sel = f === active ? 'background:#eef6ff;font-weight:bold;' : '';
+        return `<span class="pick" data-i="${i}" style="cursor:pointer;display:inline-block;margin:3px 4px 0 0;padding:1px 7px;border-radius:10px;border:1px solid #ccc;${sel}"><span style="color:${col}">■</span> ${esc(p.ext_id)}</span>`;
+      }).join('') + `</div>`;
+    }
+    renderRecord(active, chooser);
+    if (hits.length > 1)
+      info.querySelectorAll('.pick').forEach(el => el.onclick = () => showRecords(hits, hits[+el.dataset.i]));
+  }
+
+  function renderRecord(ev, chooserHtml) {
     const p = ev.getProperties();
     const ways = p.ways || [];
     state.hoverWays = new Set(ways); state.hoverKey = ways.join(','); hoverWayLayer.changed();
-    info.innerHTML = `<span class="close" title="close">✕</span>`
+    info.innerHTML = `<span class="close" title="close">✕</span>` + (chooserHtml || '')
       + `<h3>GHEvent · ${ways.length} matched ways</h3>`
       + `<div class="cap">${esc(p.caption || '')}</div>` + companionLine(p.ext_id) + propTable(p)
       + `<h3 style="margin-top:10px">Matched ways <span class="muted" id="edgeCount">…</span></h3>`
@@ -222,7 +259,7 @@
     info.style.display = 'block';
     info.querySelector('.close').onclick = () => { info.style.display = 'none'; pickSource.clear(); };
     loadWays(ev.getGeometry(), ways, p);
-  });
+  }
 
   // a way's representative edge is one-way when car_access is "true | false" (fwd yes, rev no)
   const isOneway = e => { const c = e && e.car_access; if (c == null) return false; const p = String(c).split('|'); return p.length === 2 && p[1].trim() === 'false'; };
