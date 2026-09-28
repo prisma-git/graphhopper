@@ -276,6 +276,27 @@
       for (const e of edges) { const w = String(e.osm_way_id); if (!groups.has(w)) groups.set(w, []); groups.get(w).push(e); }
       document.getElementById('edgeCount').textContent = `(${ways.length} ways, ${edges.length} edges in view)`;
       const box = document.getElementById('edges'); box.classList.remove('muted'); box.innerHTML = '';
+      // Match quality: directed Hausdorff (metres) from the densified DATEX line to the kept
+      // edges. Large = a stretch of the DATEX line has no nearby matched edge (under-match or
+      // off-line). Cheap: O(datexPts x edgePts), both small.
+      try {
+        const dl = geom.clone().transform('EPSG:3857', 'EPSG:4326').getCoordinates();
+        const dd = [];
+        for (let i = 0; i < dl.length - 1; i++) {
+          const a = dl[i], b = dl[i + 1], n = Math.max(1, Math.ceil(ol.sphere.getDistance(a, b) / 25));
+          for (let k = 0; k < n; k++) dd.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+        }
+        dd.push(dl[dl.length - 1]);
+        const kp = [];
+        for (const es of groups.values()) for (const e of es) if (e.geometry) { try { for (const c of wkt.readGeometry(e.geometry).getCoordinates()) kp.push(c); } catch (x) {} }
+        if (kp.length) {
+          let gap = 0;
+          for (const p of dd) { let mn = Infinity; for (const q of kp) { const d = ol.sphere.getDistance(p, q); if (d < mn) mn = d; } if (mn > gap) gap = mn; }
+          const poor = gap > 40;
+          box.insertAdjacentHTML('beforebegin',
+            `<div style="margin:2px 0 6px;${poor ? 'color:#c00;font-weight:bold' : 'color:#080'}">match gap: ${gap.toFixed(0)} m (DATEX vs kept edges)${poor ? ' ⚠ possible under-match / off-line' : ''}</div>`);
+        }
+      } catch (e) {}
       let present = 0, oneway = 0;
       for (const w of ways) {
         const es = groups.get(String(w)) || [];
