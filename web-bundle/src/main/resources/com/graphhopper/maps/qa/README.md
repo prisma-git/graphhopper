@@ -1,5 +1,7 @@
 # GHEvents QA endpoints (`/events`, `/events/edges`)
 
+*Deutsche Version: [README.de.md](README.de.md)*
+
 Read-only HTTP endpoints that expose the **in-memory GHEvent overlay** and the **matched
 graph edges** for a bounding box, so a map client can draw DATEX events on top of the road
 network and inspect how each event net-matched. They power the net-matching QA map at
